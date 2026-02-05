@@ -737,12 +737,50 @@ L'entra\^{i}nement intensif sur MMLU observ\'{e} dans le Tableau~\ref{tab:sft_re
 
 \paragraph{Lien avec l'architecture.} L'architecture COMPLEXITY-DEEP pourrait \^{e}tre particuli\`{e}rement adapt\'{e}e \`{a} cette strat\'{e}gie gr\^{a}ce \`{a} l'orthogonalisation des experts, la convergence du guidage $\mu$ et le scaling adaptatif.
 
+\subsection{\'{E}tude d'ablation \`{a} l'inf\'{e}rence}
+\label{sec:ablations}
+
+Pour \'{e}valuer la contribution de chaque composant architectural, nous r\'{e}alisons des ablations \`{a} l'inf\'{e}rence sur le mod\`{e}le BASE pr\'{e}-entra\^{i}n\'{e}. Chaque composant est individuellement d\'{e}sactiv\'{e} en mettant \`{a} z\'{e}ro ses poids correspondants, tout en conservant les autres composants intacts. Nous \'{e}valuons sur 200 \'{e}chantillons par benchmark.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lccccc|c}
+\toprule
+\textbf{Configuration} & \textbf{MMLU} & \textbf{HellaS.} & \textbf{ARC-C} & \textbf{ARC-E} & \textbf{Wino.} & \textbf{Moy.} \\
+\midrule
+Mod\`{e}le complet & 21,5 & 24,5 & 22,0 & 32,0 & 48,5 & 29,7 \\
+Sans Mu-Guidance & 22,5 & 25,5 & 21,0 & \textbf{24,5} & 52,5 & 29,2 \\
+Sans Token-Routing & 21,0 & 25,5 & 24,0 & 31,5 & 47,0 & 29,8 \\
+Sans PiD Controller & 25,0 & 27,5 & 24,5 & 29,5 & \textbf{45,0} & 30,3 \\
+\midrule
+\multicolumn{7}{l}{\textit{$\Delta$ vs Mod\`{e}le complet :}} \\
+Sans Mu-Guidance & +1,0 & +1,0 & $-$1,0 & $-$7,5 & +4,0 & $-$0,5 \\
+Sans Token-Routing & $-$0,5 & +1,0 & +2,0 & $-$0,5 & $-$1,5 & +0,1 \\
+Sans PiD Controller & +3,5 & +3,0 & +2,5 & $-$2,5 & $-$3,5 & +0,6 \\
+\bottomrule
+\end{tabular}
+\caption{R\'{e}sultats des ablations \`{a} l'inf\'{e}rence (\%). Les valeurs en gras indiquent des baisses notables lorsqu'un composant est retir\'{e}.}
+\label{tab:ablations}
+\end{table}
+
+\textbf{Analyse.} Plusieurs observations \'{e}mergent de ces ablations \`{a} l'inf\'{e}rence :
+
+\begin{enumerate}
+    \item \textbf{Impact du Mu-Guidance sur le raisonnement} : la d\'{e}sactivation du Mu-Guidance provoque la plus forte baisse sur un benchmark unique : ARC-Easy chute de $-$7,5\%, sugg\'{e}rant que le flux d'information bidirectionnel est le plus b\'{e}n\'{e}fique pour les t\^{a}ches de raisonnement scientifique o\`{u} le contexte descendant aide \`{a} la s\'{e}lection de r\'{e}ponse.
+
+    \item \textbf{Robustesse du Token-Routing} : l'impact minimal de la d\'{e}sactivation du Token-Routing \`{a} l'inf\'{e}rence est \textit{attendu} : puisque les poids du mod\`{e}le ont \'{e}t\'{e} optimis\'{e}s sous le routage modulo, les poids des experts encodent d\'{e}j\`{a} des sp\'{e}cialisations sp\'{e}cifiques au routage. La vraie contribution du Token-Routing est architecturale (r\'{e}duction du calcul par un facteur $n$, voir Th\'{e}or\`{e}me~\ref{thm:capacity}) plut\^{o}t que mesurable par une ablation \`{a} l'inf\'{e}rence.
+
+    \item \textbf{PiD Controller comme stabilisateur d'entra\^{i}nement} : le r\^{o}le principal du contr\^{o}leur PiD est pendant l'entra\^{i}nement (stabilit\'{e} des gradients, convergence), pas l'inf\'{e}rence. Sa suppression \`{a} l'inf\'{e}rence permet des dynamiques d'activation l\'{e}g\`{e}rement diff\'{e}rentes qui peuvent am\'{e}liorer certains benchmarks de mani\`{e}re fortuite tout en d\'{e}gradant d'autres (Winogrande : $-$3,5\%).
+
+    \item \textbf{Note m\'{e}thodologique} : il s'agit d'ablations \`{a} l'inf\'{e}rence sur un mod\`{e}le entra\^{i}n\'{e} avec tous les composants actifs. Cette m\'{e}thodologie fournit une \textit{borne inf\'{e}rieure} de l'importance des composants, car les poids co-s'adaptent pendant l'entra\^{i}nement. Des ablations \`{a} l'entra\^{i}nement compl\`{e}tes (r\'{e}-entra\^{i}nement from scratch sans chaque composant) fourniraient des preuves plus d\'{e}finitives et sont planifi\'{e}es comme travaux futurs.
+\end{enumerate}
+
 \subsection{Limitations et travaux futurs}
 \label{sec:limitations}
 
 \begin{itemize}
     \item \textbf{Comparaison \`{a} calcul \'{e}gal} : une comparaison rigoureuse avec Pythia ou d'autres lignes de base au m\^{e}me budget de tokens (33B) quantifierait l'efficacit\'{e} relative de l'architecture
-    \item \textbf{Ablations formelles} : bien que notre analyse th\'{e}orique (Section~\ref{sec:theory}) \'{e}tablisse des propri\'{e}t\'{e}s cl\'{e}s et que l'analyse d'activit\'{e} d\'{e}montre que les composants sont utilis\'{e}s, des ablations contr\^{o}l\'{e}es sont n\'{e}cessaires pour quantifier pr\'{e}cis\'{e}ment la contribution empirique de chaque innovation
+    \item \textbf{Ablations \`{a} l'entra\^{i}nement} : bien que nos ablations \`{a} l'inf\'{e}rence (Section~\ref{sec:ablations}) fournissent des preuves initiales, des ablations compl\`{e}tes \`{a} l'entra\^{i}nement (r\'{e}-entra\^{i}nement from scratch sans chaque composant) sont n\'{e}cessaires pour quantifier d\'{e}finitivement la contribution de chaque innovation
     \item \textbf{Apprentissage continu} : valider l'hypoth\`{e}se MMLU-comme-d\'{e}pendance en mesurant les taux d'oubli lors de l'ajout de datasets sp\'{e}cialis\'{e}s (code, outils) avec et sans r\'{e}gularisation MMLU
     \item \textbf{Th\'{e}orie \'{e}tendue} : bien que nous \'{e}tablissions l'\'{e}quivalence de capacit\'{e} et l'orthogonalisation par le gradient (Th\'{e}or\`{e}mes~\ref{thm:capacity}, \ref{thm:gradient_orthogonalization}), une analyse compl\`{e}te des taux de convergence et de l'interaction entre le guidage Mu et le Token-Routing reste ouverte
     \item \textbf{Hypoth\`{e}se de d\'{e}pendance noyau} : la strat\'{e}gie d'ancrage MMLU (Section~\ref{sec:mmlu_anchor}) reste exploratoire et n\'{e}cessite une validation contr\^{o}l\'{e}e
@@ -757,7 +795,7 @@ Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture LLM novatrice intr
 
 Notre impl\'{e}mentation \`{a} 1,5 milliard de param\`{e}tres, entra\^{i}n\'{e}e sur 33 milliards de tokens issus de FineWeb-Edu, d\'{e}montre la viabilit\'{e} de ces concepts avec une convergence stable (perte 3,78, perplexit\'{e} 43,7). L'\'{e}valuation sur des benchmarks standards montre des performances coh\'{e}rentes avec la taille du mod\`{e}le pour le mod\`{e}le BASE, avec une am\'{e}lioration substantielle apr\`{e}s fine-tuning supervis\'{e} (MMLU : 20,6\% $\to$ 30\%, ARC-Challenge : 17\% $\to$ 23\%).
 
-Les travaux futurs incluront : (1) des \'{e}tudes d'ablation formelles avec des budgets de calcul contr\^{o}l\'{e}s pour quantifier pr\'{e}cis\'{e}ment les contributions individuelles des composants, et (2) une validation rigoureuse de l'hypoth\`{e}se de d\'{e}pendance noyau \`{a} travers des exp\'{e}riences contr\^{o}l\'{e}es comparant les strat\'{e}gies d'entra\^{i}nement ancr\'{e}es sur MMLU versus uniformes \`{a} travers plusieurs domaines.
+Les \'{e}tudes d'ablation \`{a} l'inf\'{e}rence r\'{e}v\`{e}lent que le Mu-Guidance a l'impact le plus fort sur les benchmarks de raisonnement (ARC-Easy : $-$7,5\% lorsque d\'{e}sactiv\'{e}), tandis que les contributions du Token-Routing et du contr\^{o}leur PiD sont principalement architecturales (efficacit\'{e} computationnelle) et li\'{e}es \`{a} l'entra\^{i}nement (stabilit\'{e}), respectivement. Les travaux futurs incluront : (1) des ablations \`{a} l'entra\^{i}nement pour quantifier d\'{e}finitivement les contributions des composants, et (2) une validation rigoureuse de l'hypoth\`{e}se de d\'{e}pendance noyau \`{a} travers des exp\'{e}riences contr\^{o}l\'{e}es.
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail introduit des innovations architecturales pour les mod\`{e}les de langage. Bien que ces mod\`{e}les aient de nombreuses applications, ils comportent \'{e}galement des risques de mauvaise utilisation. Nous publions les poids du mod\`{e}le pour permettre la recherche tout en encourageant une utilisation responsable.

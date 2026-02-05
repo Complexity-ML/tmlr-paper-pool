@@ -1,0 +1,36 @@
+{
+  "full_model": {
+    "MMLU": 21.5,
+    "HellaSwag": 24.5,
+    "ARC-Challenge": 22.0,
+    "ARC-Easy": 32.0,
+    "Winogrande": 48.5
+  },
+  "no_mu_guidance": {
+    "MMLU": 22.5,
+    "HellaSwag": 25.5,
+    "ARC-Challenge": 21.0,
+    "ARC-Easy": 24.5,
+    "Winogrande": 52.5
+  },
+  "no_token_routing": {
+    "MMLU": 21.0,
+    "HellaSwag": 25.5,
+    "ARC-Challenge": 24.0,
+    "ARC-Easy": 31.5,
+    "Winogrande": 47.0
+  },
+  "no_pid_controller": {
+    "MMLU": 25.0,
+    "HellaSwag": 27.500000000000004,
+    "ARC-Challenge": 24.5,
+    "ARC-Easy": 29.5,
+    "Winogrande": 45.0
+  },
+  "metadata": {
+    "checkpoint": "./checkpoints/final.pt",
+    "max_samples": 200,
+    "date": "2026-02-05T20:28:58.655306",
+    "device": "cuda"
+  }
+}
