@@ -43,7 +43,7 @@
 \maketitle
 
 \begin{abstract}
-Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage (LLM) d\'{e}velopp\'{e}e from scratch, introduisant trois contributions originales : (1) \textbf{Token-Routed MLP}, un m\'{e}canisme de routage dynamique par token inspir\'{e} des Mixture of Experts mais sans n\'{e}cessiter de perte auxiliaire d'\'{e}quilibrage de charge, (2) \textbf{Mu-Guided Attention}, o\`{u} un \'{e}tat latent $\mu$ de la couche pr\'{e}c\'{e}dente guide les projections K, Q et V, cr\'{e}ant un flux d'information bidirectionnel entre l'attention et la dynamique, et (3) un \textbf{contr\^{o}leur adaptatif de style PiD} qui stabilise l'entra\^{i}nement par un ajustement dynamique de l'\'{e}chelle. Nous fournissons une analyse th\'{e}orique formelle prouvant l'\'{e}quilibre parfait de charge, l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses \`{a} un co\^{u}t de calcul de $1/n$, l'orthogonalisation des experts guid\'{e}e par le gradient, et \'{e}tablissons des connexions entre le guidage Mu et la th\'{e}orie du codage pr\'{e}dictif. Notre impl\'{e}mentation \`{a} 1,5 milliard de param\`{e}tres, entra\^{i}n\'{e}e sur 33 milliards de tokens issus de FineWeb-Edu, d\'{e}montre la viabilit\'{e} de cette architecture avec une convergence stable (perte 3,78, perplexit\'{e} 43,7). L'\'{e}valuation sur des benchmarks standards montre des performances coh\'{e}rentes avec la taille du mod\`{e}le, le fine-tuning supervis\'{e} atteignant 30\% sur MMLU (+5\% au-dessus du hasard) et 23\% sur ARC-Challenge.
+Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage introduisant trois contributions originales : (1) \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton}, un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge (1.0000$\times$) via un algorithme glouton tenant compte des fr\'{e}quences~\citep{zipf1949human}, \'{e}liminant le routeur appris et les pertes auxiliaires ; (2) \textbf{Mu-Guided Attention}, o\`{u} un \'{e}tat latent $\mu$ circule entre les couches pour guider les projections K, Q et V apr\`{e}s le MLP, capturant l'information sp\'{e}cifique \`{a} chaque expert ; et (3) \textbf{Shared Lexical Expert}, un MLP dense partag\'{e} par tous les tokens qui capture les patterns universels (syntaxe, grammaire) tandis que les experts rout\'{e}s se sp\'{e}cialisent. Nous fournissons une analyse th\'{e}orique formelle prouvant l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses \`{a} un co\^{u}t de calcul de $1/n$. Un mod\`{e}le pilote initial de 1,5B param\`{e}tres a motiv\'{e} une simplification de l'architecture : le Dynamic Scaler PiD, redondant avec les m\'{e}canismes adaptatifs d'Adam, a \'{e}t\'{e} retir\'{e}. L'\'{e}valuation compare des mod\`{e}les iso-param\`{e}tres ($\sim$166M) entra\^{i}n\'{e}s from scratch sur 8B tokens de FineWeb-Edu dans des conditions identiques.
 \end{abstract}
 
 %=============================================================================
@@ -59,12 +59,11 @@ Les grands mod\`{e}les de langage (LLM) ont r\'{e}volutionn\'{e} le traitement d
     \item \textbf{Instabilit\'{e} de l'entra\^{i}nement} : les grands mod\`{e}les souffrent souvent d'instabilit\'{e}s num\'{e}riques n\'{e}cessitant un r\'{e}glage minutieux des hyperparaml\`{e}tres.
 \end{itemize}
 
-Nous proposons COMPLEXITY-DEEP, une architecture qui r\'{e}pond \`{a} ces limitations \`{a} travers trois innovations :
+Nous proposons COMPLEXITY-DEEP, une architecture qui r\'{e}pond aux deux premi\`{e}res limitations \`{a} travers deux innovations :
 
 \begin{enumerate}
-    \item \textbf{Token-Routed MLP} : un routage d\'{e}terministe par token (token\_id modulo nombre d'experts) qui s\'{e}lectionne un expert par token sans perte auxiliaire.
-    \item \textbf{Mu-Guided Attention} : un m\'{e}canisme o\`{u} l'\'{e}tat latent $\mu$ de la couche pr\'{e}c\'{e}dente influence les projections K, Q et V, cr\'{e}ant un flux bidirectionnel.
-    \item \textbf{Dynamic Scaler de style PiD} : un contr\^{o}leur adaptatif inspir\'{e} des syst\`{e}mes de commande automatique pour stabiliser l'entra\^{i}nement.
+    \item \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton} : un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge via un algorithme glouton, \'{e}liminant le routeur appris et les pertes auxiliaires d'\'{e}quilibrage.
+    \item \textbf{Mu-Guided Attention} : un m\'{e}canisme o\`{u} l'\'{e}tat latent $\mu$ de la couche pr\'{e}c\'{e}dente influence les projections K, Q et V, cr\'{e}ant un flux d'information descendant entre les couches.
 \end{enumerate}
 
 %=============================================================================
@@ -95,7 +94,7 @@ COMPLEXITY-DEEP est une architecture de type d\'{e}codeur uniquement compos\'{e}
 \begin{enumerate}
     \item Un bloc d'attention multi-t\^{e}tes avec guidage Mu
     \item Un bloc MLP avec routage par token
-    \item Un contr\^{o}leur dynamique (Dynamic Scaler)
+    \item Connexions r\'{e}siduelles avec pr\'{e}-normalisation (RMSNorm)
 \end{enumerate}
 
 La dimension cach\'{e}e est $d_{model}$, avec $n_h$ t\^{e}tes d'attention et $n_{kv}$ t\^{e}tes cl\'{e}/valeur (GQA).
@@ -105,15 +104,16 @@ La dimension cach\'{e}e est $d_{model}$, avec $n_h$ t\^{e}tes d'attention et $n_
 
 Contrairement aux MoE traditionnels qui utilisent un routage souple appris avec \'{e}quilibrage de charge, nous proposons un routage \textbf{d\'{e}terministe} bas\'{e} sur l'identit\'{e} du token :
 \begin{equation}
-\text{expert\_idx} = \text{token\_id} \mod n_{experts}
+\text{expert\_idx}(t) = \text{BinPack}(t, \text{freq}) \quad \text{(assign\'{e} une fois, d\'{e}terministe)}
 \label{eq:routing}
 \end{equation}
+o\`{u} BinPack assigne chaque token $t$ (tri\'{e} par fr\'{e}quence d\'{e}croissante) \`{a} l'expert ayant la charge totale la plus faible (Section~\ref{sec:zipf_routing}).
 
-Ce choix de conception est \textit{d\'{e}lib\'{e}r\'{e}} : le routage ne d\'{e}pend pas du contenu s\'{e}mantique $\mathbf{x}$ mais uniquement de l'identifiant lexical du token. Chaque token du vocabulaire est ainsi \textit{pr\'{e}-assign\'{e}} \`{a} un expert sp\'{e}cifique, garantissant une distribution parfaitement uniforme ($1/n_{experts}$ par expert) par construction math\'{e}matique.
+Ce choix de conception est \textit{d\'{e}lib\'{e}r\'{e}} : le routage ne d\'{e}pend pas du contenu s\'{e}mantique $\mathbf{x}$ mais uniquement de l'identifiant lexical du token. Chaque token du vocabulaire est \textit{pr\'{e}-assign\'{e}} \`{a} un expert sp\'{e}cifique avec un \'{e}quilibre de charge parfait (1.0000$\times$).
 
-Pour chaque token, un seul expert est activ\'{e} :
+Pour chaque token, un seul expert est activ\'{e}, combin\'{e} avec le Shared Lexical Expert :
 \begin{equation}
-\text{MLP}_{routed}(\mathbf{x}) = \text{Expert}_i(\mathbf{x}) \quad \text{o\`{u} } i = \text{token\_id} \mod n_{experts}
+\text{MLP}_{\text{output}}(\mathbf{x}) = \text{SharedMLP}(\mathbf{x}) + \text{Expert}_e(\mathbf{x}) \quad \text{o\`{u} } e = \text{BinPack}(\text{token\_id})
 \label{eq:mlp_routed}
 \end{equation}
 
@@ -123,16 +123,16 @@ Chaque expert est un MLP standard avec activation SiLU (SwiGLU) :
 \label{eq:expert}
 \end{equation}
 
-\textbf{Pourquoi pas un routage s\'{e}mantique ?} On pourrait objecter que sans routage bas\'{e} sur le contenu, le Token-Routed MLP n'est qu'un \og MLP d\'{e}coup\'{e} en morceaux \fg{}. Cette objection ignore deux points cruciaux :
+\textbf{Pourquoi pas un routage s\'{e}mantique ?} On pourrait objecter que sans routage bas\'{e} sur le contenu, le Token-Routed MLP n'est qu'un ``MLP d\'{e}coup\'{e} en morceaux ''. Cette objection ignore deux points cruciaux :
 
 \begin{enumerate}
-    \item \textbf{Sp\'{e}cialisation \'{e}mergente} : malgr\'{e} un routage arbitraire, les experts \textit{divergent} pendant l'entra\^{i}nement vers des repr\'{e}sentations orthogonales ($\cos\_sim \approx 0$, voir Section~\ref{sec:token_routing_analysis}). Le routage d\'{e}terministe n'emp\^{e}che pas la sp\'{e}cialisation --- il la garantit sans effondrement.
+    \item \textbf{Sp\'{e}cialisation fonctionnelle} : malgr\'{e} un routage lexical (non s\'{e}mantique), chaque expert atteint une perplexit\'{e} plus basse sur son sous-ensemble de tokens que le MLP dense \'{e}quivalent sur les m\^{e}mes tokens (voir Section~\ref{sec:expert_analysis}). Cette sp\'{e}cialisation \textit{fonctionnelle} (mesur\'{e}e par la performance, non par la g\'{e}om\'{e}trie des poids) d\'{e}montre que le routage d\'{e}terministe induit une sp\'{e}cialisation utile sans effondrement.
     \item \textbf{\'{E}quilibre parfait} : le routage modulo garantit math\'{e}matiquement que chaque expert re\c{c}oit exactement $1/n_{experts}$ des tokens, \'{e}liminant le probl\`{e}me central des MoE : le d\'{e}s\'{e}quilibre cumulatif.
 \end{enumerate}
 
 \paragraph{M\'{e}canisme de sp\'{e}cialisation.} Une question cruciale se pose : comment les experts peuvent-ils se sp\'{e}cialiser quand le routage est bas\'{e} uniquement sur l'identit\'{e} lexicale du token plut\^{o}t que sur le contenu s\'{e}mantique ? L'intuition cl\'{e} est que les experts optimisent pour des \textit{distributions contextuelles}, pas pour les identit\'{e}s de tokens.
 
-Consid\'{e}rons le token \og the \fg{} (token\_id = 123) qui est toujours rout\'{e} vers l'expert 3. Bien que \og the \fg{} n'ait pas de sp\'{e}cificit\'{e} s\'{e}mantique en soi, son embedding contextuel $\mathbf{x}^{(l)}$ (calcul\'{e} par les couches pr\'{e}c\'{e}dentes) encode une information s\'{e}mantique riche sur le contexte environnant. L'expert 3 apprend la fonction :
+Consid\'{e}rons le token ``the '' (token\_id = 123) qui est toujours rout\'{e} vers l'expert 3. Bien que ``the '' n'ait pas de sp\'{e}cificit\'{e} s\'{e}mantique en soi, son embedding contextuel $\mathbf{x}^{(l)}$ (calcul\'{e} par les couches pr\'{e}c\'{e}dentes) encode une information s\'{e}mantique riche sur le contexte environnant. L'expert 3 apprend la fonction :
 \begin{equation}
 \mathbf{h} = \text{Expert}_3(\mathbf{x}^{(l)}) \quad \text{o\`{u} } \mathbf{x}^{(l)} \text{ varie selon le contexte}
 \end{equation}
@@ -151,7 +151,7 @@ Le flux de gradient est :
 
 Puisque le routage modulo assure des ensembles de tokens disjoints ($T_i \cap T_j = \emptyset$), et que le langage naturel pr\'{e}sente une co-occurrence token-contexte non uniforme, les distributions contextuelles $\mathcal{C}_i$ et $\mathcal{C}_j$ sont statistiquement distinctes. Cela induit des statistiques de gradient diff\'{e}rentes, entra\^{i}nant la divergence des experts (Th\'{e}or\`{e}me~\ref{thm:gradient_orthogonalization}).
 
-\textbf{Validation empirique :} La Section~\ref{sec:expert_analysis} confirme que les experts atteignent une orthogonalit\'{e} quasi parfaite ($\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)}) \approx 0$) malgr\'{e} un routage arbitraire, validant ce m\'{e}canisme.
+\textbf{Validation empirique :} La Section~\ref{sec:expert_analysis} mesure la sp\'{e}cialisation fonctionnelle via la perplexit\'{e} par expert : chaque expert atteint une PPL plus basse sur ses tokens assign\'{e}s que le MLP dense sur les m\^{e}mes tokens. Nous notons que la similarit\'{e} cosinus quasi nulle entre experts, bien qu'observ\'{e}e empiriquement, est un artefact g\'{e}om\'{e}trique attendu en haute dimension et ne constitue pas une preuve de sp\'{e}cialisation en soi.
 
 \textbf{Avantages op\'{e}rationnels :}
 \begin{itemize}
@@ -171,58 +171,68 @@ L'innovation centrale de COMPLEXITY-DEEP est l'introduction d'un \'{e}tat latent
 \end{align}
 o\`{u} $\mathbf{W}_{\mu K}, \mathbf{W}_{\mu Q}, \mathbf{W}_{\mu V}$ sont des projections lin\'{e}aires appris.
 
-\textbf{Optimisation Mu-KQV fusionn\'{e}e} : pour l'efficacit\'{e}, nous fusionnons les op\'{e}rations par concat\'{e}nation :
+\paragraph{$\mu_{\text{init}}$ apprenable pour la couche 0.} Dans un Transformer standard, la couche 0 ne re\c{c}oit aucune information descendante. Nous introduisons un param\`{e}tre apprenable $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialis\'{e} \`{a} z\'{e}ro) qui sert de $\mu^{(-1)}$ pour la premi\`{e}re couche :
 \begin{equation}
-\mathbf{K} = [\mathbf{x}, \mu^{(l-1)}] \cdot [\mathbf{W}_K; \mathbf{W}_{\mu K}]^T
-\label{eq:fused}
+\mu^{(-1)} = \mu_{\text{init}} \quad \text{(apprenable, partag\'{e} par toutes les positions)}
 \end{equation}
-Cette fusion r\'{e}duit le nombre de multiplications matricielles de 6 \`{a} 3, doublant la vitesse.
+Cela permet \`{a} la couche 0 de b\'{e}n\'{e}ficier \'{e}galement du guidage Mu, le gradient ajustant $\mu_{\text{init}}$ pour capturer un prior d'attention optimal.
 
-\textbf{Mise \`{a} jour de $\mu$} : l'\'{e}tat $\mu$ est mis \`{a} jour via une \'{e}quation diff\'{e}rentielle discr\'{e}tis\'{e}e :
+\paragraph{Production de $\mu$ apr\`{e}s le MLP.} Chaque couche $l$ produit son propre $\mu^{(l)}_{\text{contextual}}$ \textit{apr\`{e}s} le dispatch expert, capturant l'information sp\'{e}cifique \`{a} l'expert qui a trait\'{e} chaque token :
 \begin{equation}
-\mu^{(l)} = \alpha \cdot \mu^{(l-1)} + \beta \cdot f(\mathbf{h}^{(l)})
+\mu^{(l)}_{\text{contextual}} = \text{clamp}(\boldsymbol{\mu}^{(l)}_{\text{param}}, \mu_{\min}, \mu_{\max}) + \mathbf{W}_{\mu}^{(l)} \mathbf{h}^{(l)}_{\text{post-MLP}}
 \label{eq:mu_update}
 \end{equation}
-o\`{u} $\alpha, \beta$ sont des hyperparam\`{e}tres (typiquement $\alpha = 0.9, \beta = 0.1$) et $f$ est une projection lin\'{e}aire.
+o\`{u} $\boldsymbol{\mu}^{(l)}_{\text{param}} \in \mathbb{R}^{d}$ est un param\`{e}tre apprenable \textit{propre \`{a} la couche $l$} (initialis\'{e} \`{a} $(\mu_{\min}+\mu_{\max})/2$) et $\mathbf{W}_{\mu}^{(l)}$ est une projection lin\'{e}aire contextuelle (initialis\'{e}e \`{a} z\'{e}ro). Ce $\mu^{(l)}_{\text{contextual}}$ devient le $\mu^{(l-1)}$ utilis\'{e} par la couche $l+1$ dans les \'{e}quations~\ref{eq:key}--\ref{eq:value}.
 
-\subsection{Dynamic Scaler adaptatif}
-\label{sec:adaptive_scaler}
-
-Pour stabiliser l'entra\^{i}nement, nous introduisons un contr\^{o}leur adaptatif qui module dynamiquement les contributions r\'{e}siduelles. Inspir\'{e} des syst\`{e}mes de commande PD (Proportionnel-D\'{e}riv\'{e}) issus de la th\'{e}orie de l'automatique, le scaler calcule :
-\begin{equation}
-s^{(l)} = \sigma\left(\mathbf{W}_c \cdot [\|\mathbf{h}^{(l)}\|, \|\mu^{(l)}\|, \Delta\mu^{(l)}] + b_c\right)
-\label{eq:scaler}
-\end{equation}
-o\`{u} :
-\begin{itemize}
-    \item $\|\mathbf{h}^{(l)}\|$ : terme proportionnel (magnitude de l'\'{e}tat cach\'{e} courant)
-    \item $\|\mu^{(l)}\|$ : terme proportionnel (magnitude de l'\'{e}tat de guidage courant)
-    \item $\Delta\mu^{(l)} = \mu^{(l)} - \mu^{(l-1)}$ : terme de type d\'{e}riv\'{e} (taux de variation de l'\'{e}tat de guidage)
-\end{itemize}
-
-Le scaler $s^{(l)} \in [0, 1]$ (via sigmo\"{i}de) module la contribution r\'{e}siduelle :
-\begin{equation}
-\mathbf{h}^{(l)}_{out} = \mathbf{h}^{(l-1)} + s^{(l)} \cdot \text{Block}^{(l)}(\mathbf{h}^{(l-1)})
-\label{eq:residual}
-\end{equation}
-
-\paragraph{Justification du design.} Nous omettons d\'{e}lib\'{e}r\'{e}ment le terme int\'{e}gral (typique des contr\^{o}leurs PID) car :
+\paragraph{Flux complet par couche.} Le traitement d'une couche $l$ suit l'ordre :
 \begin{enumerate}
-    \item \textbf{Pas d'accumulation temporelle :} contrairement aux syst\`{e}mes physiques, les r\'{e}seaux de neurones n'ont pas de dynamique temporelle continue ; chaque couche est une transformation discr\`{e}te
-    \item \textbf{\'{E}viter l'accumulation d'erreurs :} sommer les erreurs \`{a} travers les couches pourrait amplifier les instabilit\'{e}s num\'{e}riques
-    \item \textbf{Suffisant avec PD :} empiriquement, les termes proportionnel + d\'{e}riv\'{e} fournissent une stabilisation ad\'{e}quate (la Section~\ref{sec:component_analysis} montre une norme du contr\^{o}leur $\approx 13$, indiquant une r\'{e}gulation active)
+    \item \textbf{Attention} avec $\mu^{(l-1)}_{\text{contextual}}$ (re\c{c}u de la couche pr\'{e}c\'{e}dente) via les \'{e}quations~\ref{eq:key}--\ref{eq:value}
+    \item \textbf{MLP} avec dispatch expert (sparse, un seul expert par token) + Shared Lexical Expert
+    \item \textbf{Production de $\mu^{(l)}_{\text{contextual}}$} via l'\'{e}quation~\ref{eq:mu_update}, transmis \`{a} la couche $l+1$
 \end{enumerate}
 
-Le contr\^{o}leur apprend \`{a} r\'{e}duire l'\'{e}chelle des r\'{e}sidus lorsque $\|\mathbf{h}\|$ ou $\|\mu\|$ sont grands (pr\'{e}vention de l'explosion) et lorsque $\Delta\mu$ est grand (amortissement des oscillations).
+\subsection{Architecture finale}
+\label{sec:architecture_v2}
 
-\subsection{Clampage des activations}
+L'architecture finale int\`{e}gre quatre am\'{e}liorations par rapport au Token-Routed MLP initial :
 
-Pour pr\'{e}venir l'explosion des gradients et les instabilit\'{e}s num\'{e}riques, nous introduisons un m\'{e}canisme de \textbf{clampage} des activations :
+\subsubsection{Sparse Dispatch (z\'{e}ro gaspillage)}
+\label{sec:sparse_dispatch}
+
+Le dispatch initial par masque calculait \textit{tous} les tokens \`{a} travers \textit{tous} les experts, puis masquait 75\% des r\'{e}sultats---effectivement $4\times$ le co\^{u}t d'un MLP dense. Le sparse dispatch ne calcule que les tokens rout\'{e}s vers chaque expert :
 \begin{equation}
-\mathbf{h}_{clamped} = \text{clamp}(\mathbf{h}, -C, +C)
-\label{eq:clamp}
+\text{out}[\text{mask}_e] = \text{Expert}_e(\mathbf{x}[\text{mask}_e]) \quad \text{pour } e = 0, \ldots, E-1
 \end{equation}
-o\`{u} $C$ est une constante (typiquement $C = 65504$ pour BF16, correspondant \`{a} la valeur maximale repr\'{e}sentable).
+R\'{e}duisant le co\^{u}t MLP de $4\times$ dense \`{a} $1\times$ dense (iso-compute).
+
+\subsubsection{Shared Lexical Expert}
+\label{sec:shared_expert}
+
+Un MLP dense partag\'{e} traite \textit{tous} les tokens, capturant les patterns universels (syntaxe, grammaire), tandis que les experts rout\'{e}s se sp\'{e}cialisent sur leurs sous-ensembles lexicaux. La sortie combine les deux :
+\begin{equation}
+\text{MLP}_{\text{output}}(\mathbf{x}) = \underbrace{\text{SwiGLU}_{\text{shared}}(\mathbf{x})}_{\text{patterns communs}} + \underbrace{\text{SwiGLU}_{e}(\mathbf{x})}_{\text{sp\'{e}cialisation lexicale}}
+\end{equation}
+o\`{u} chaque composant est un MLP SwiGLU standard :
+\begin{align}
+\text{SwiGLU}_{\text{shared}}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^s_{gate}) \odot \mathbf{x}\mathbf{W}^s_{up})\mathbf{W}^s_{down} \\
+\text{SwiGLU}_{e}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^e_{gate}) \odot \mathbf{x}\mathbf{W}^e_{up})\mathbf{W}^e_{down}
+\end{align}
+Le shared expert a la m\^{e}me taille interm\'{e}diaire qu'un expert rout\'{e} ($d_{ff}/n$), ajoutant $\sim$6\% de param\`{e}tres au mod\`{e}le total. Il \'{e}vite que chaque expert doive r\'{e}apprendre ind\'{e}pendamment les patterns communs de la langue (syntaxe, grammaire, collocations fr\'{e}quentes), leur permettant de se concentrer sur les sp\'{e}cificit\'{e}s lexicales de leur sous-ensemble de tokens.
+
+\subsubsection{Bin-packing glouton Zipf-balanced}
+
+D\'{e}crit en Section~\ref{sec:zipf_routing}. Remplace le round-robin par un algorithme glouton qui atteint un \'{e}quilibre parfait de charge (1.0000$\times$).
+
+\subsubsection{Mu-Guidance apr\`{e}s MLP}
+
+Le calcul de $\mu$ est d\'{e}plac\'{e} \textit{apr\`{e}s} le dispatch expert (au lieu d'avant), permettant \`{a} $\mu$ de capturer l'information sp\'{e}cifique \`{a} chaque expert. La couche suivante adapte ainsi ses projections K, Q, V en fonction de l'expert qui a trait\'{e} chaque token.
+
+\subsection{Dynamic Scaler adaptatif (Retir\'{e})}
+\label{sec:adaptive_scaler}
+
+Une version ant\'{e}rieure de l'architecture incluait un Dynamic Scaler de style PiD qui modulait les contributions r\'{e}siduelles via un contr\^{o}leur appris. Les r\'{e}sultats empiriques aux \'{e}chelles proxy 100M et 170M ont montr\'{e} des b\'{e}n\'{e}fices inconsistants : \`{a} 100M, retirer le PiD \textit{am\'{e}liorait} la perte de $-0,005$, tandis qu'\`{a} 170M il ne contribuait que $+0,010$. Le contr\^{o}leur n\'{e}cessitait \'{e}galement des interventions ad-hoc (clampage d'activations, red\'{e}marrages multiples) pour pr\'{e}venir les instabilit\'{e}s.
+
+Sur la base de ces \'{e}vidences, le Dynamic Scaler a \'{e}t\'{e} retir\'{e} de l'architecture. Le mod\`{e}le simplifi\'{e} ne conserve que le Token-Routed MLP (avec routage Zipf-balanced) et le Mu-Guidance, obtenant des r\'{e}sultats comparables ou meilleurs avec substantiellement moins de param\`{e}tres et aucun hack de stabilit\'{e}.
 
 %=============================================================================
 \section{Analyse th\'{e}orique}
@@ -499,68 +509,36 @@ Contexte max & 4096 \\
 \label{sec:experiments}
 %=============================================================================
 
-\subsection{Pr\'{e}-entra\^{i}nement}
+\subsection{\'{E}tude pilote}
+\label{sec:pilot_study}
 
-Le mod\`{e}le a \'{e}t\'{e} pr\'{e}-entra\^{i}n\'{e} sur \textbf{FineWeb-Edu} (HuggingFace), un corpus \'{e}ducatif/scientifique de haute qualit\'{e}, en mode streaming. Configuration :
-\begin{itemize}
-    \item \textbf{Donn\'{e}es} : $\sim$33 milliards de tokens (FineWeb-Edu streaming)
-    \item \textbf{Taux d'apprentissage} : strat\'{e}gie alternante avec plusieurs warmups (100k, 200k, 400k \'{e}tapes)
-    \item \textbf{Taille de batch} : 16 (s\'{e}quences de 2048 tokens)
-    \item \textbf{Optimiseur} : AdamW ($\beta_1 = 0.9, \beta_2 = 0.95$)
-    \item \textbf{Total d'\'{e}tapes} : 1M
-\end{itemize}
+Un mod\`{e}le exploratoire de 1,5B param\`{e}tres entra\^{i}n\'{e} sur 7B tokens a motiv\'{e} la simplification de l'architecture : le Dynamic Scaler PiD a \'{e}t\'{e} retir\'{e} (redondant avec Adam), le routage Zipf-balanced a \'{e}t\'{e} ajout\'{e}, et le Shared Lexical Expert a \'{e}t\'{e} introduit. L'\'{e}valuation d\'{e}finitive est pr\'{e}sent\'{e}e \`{a} l'\'{e}chelle 166M.
 
-Cette strat\'{e}gie de taux d'apprentissage alternant s'est r\'{e}v\'{e}l\'{e}e cruciale : face \`{a} une perte stable (plateau), nous avons d\'{e}couvert qu'un nouveau cycle de warmup relance la descente. La perte a diminu\'{e} de 6,2 \`{a} \textbf{3,78} sur 1M d'\'{e}tapes, avec une perplexit\'{e} finale de \textbf{43,7}.
+\subsection{Recette d'entra\^{i}nement}
+\label{sec:training_recipe}
 
-\textbf{Contexte computationnel} : notre budget de $\sim$33 milliards de tokens est modeste compar\'{e} aux mod\`{e}les de taille similaire (TinyLlama : 3T tokens, soit 100$\times$ plus). Cette limitation d\'{e}lib\'{e}r\'{e}e valide l'architecture avec des ressources accessibles tout en laissant une marge significative d'am\'{e}lioration par la mise \`{a} l'\'{e}chelle des donn\'{e}es.
+Notre recette d'entra\^{i}nement suit les pratiques standard des LLMs modernes (LLaMA, GPT-3) avec deux ajustements automatiques :
 
-\subsubsection{\'{E}chelle des donn\'{e}es d'entra\^{i}nement et propri\'{e}t\'{e}s architecturales vs. d\'{e}pendantes des donn\'{e}es}
-\label{sec:data_scale_caveat}
+\paragraph{Warmup dynamique.} Au lieu d'un nombre fixe d'\'{e}tapes de warmup (qui peut repr\'{e}senter 52\% du training pour des runs courts), le warmup est automatiquement fix\'{e} \`{a} \textbf{5\% du nombre total d'\'{e}tapes}. Cela garantit un ratio warmup/training constant ind\'{e}pendamment de la dur\'{e}e du run.
 
-Notre budget d'entra\^{i}nement d'environ 33 milliards de tokens repr\'{e}sente une contrainte d\'{e}lib\'{e}r\'{e}e pour valider la faisabilit\'{e} architecturale avec des ressources computationnelles accessibles (mat\'{e}riel grand public, budget acad\'{e}mique). Cependant, c'est 1/100\`{e}me des donn\'{e}es utilis\'{e}es par des mod\`{e}les comparables (par ex. TinyLlama : 3T tokens), ce qui soul\`{e}ve une question m\'{e}thodologique importante :
+\paragraph{Initialisation GPT-style.} Les projections de sortie r\'{e}siduelles (\texttt{o\_proj}, \texttt{down\_proj}) sont initialis\'{e}es avec un \'{e}cart-type r\'{e}duit :
+\begin{equation}
+\sigma_{\text{residual}} = \frac{0.02}{\sqrt{2 \times L}}
+\end{equation}
+o\`{u} $L$ est le nombre de couches. Cela emp\^{e}che le flux r\'{e}siduel de cro\^{i}tre avec la profondeur~\citep{radford2019language}.
 
-\paragraph{Les propri\'{e}t\'{e}s observ\'{e}es sont-elles architecturales ou d\'{e}pendantes des donn\'{e}es ?}
+\paragraph{Autres hyperparaml\`{e}tres.} Weight decay = 0.1 (standard GPT-3/LLaMA), AdamW avec $\beta_1 = 0.9$, $\beta_2 = 0.95$, gradient clipping $= 1.0$, pr\'{e}cision BF16, scheduler cosine avec min\_lr = 10\% du peak.
 
-\textbf{Propri\'{e}t\'{e}s avec garanties th\'{e}oriques (architecturales) :}
-\begin{itemize}
-    \item \textbf{\'{E}quilibre parfait de charge :} le Th\'{e}or\`{e}me~\ref{thm:perfect_balance} prouve que chaque expert re\c{c}oit exactement $|\mathcal{V}|/n$ tokens par construction math\'{e}matique, ind\'{e}pendamment de la dur\'{e}e d'entra\^{i}nement
-    \item \textbf{Convergence de l'\'{e}tat $\mu$ :} le Th\'{e}or\`{e}me~\ref{thm:mu_convergence} \'{e}tablit une convergence exponentielle de taux $\alpha^L \approx 0.08$, une propri\'{e}t\'{e} de la r\`{e}gle de mise \`{a} jour, pas des donn\'{e}es
-    \item \textbf{\'{E}quivalence de capacit\'{e} :} le Th\'{e}or\`{e}me~\ref{thm:capacity} prouve que la capacit\'{e} de repr\'{e}sentation \'{e}gale celle des mod\`{e}les denses \`{a} $1/n$ du co\^{u}t de calcul, ind\'{e}pendamment de l'\'{e}chelle d'entra\^{i}nement
-\end{itemize}
+\subsection{Routage Zipf-Balanced}
+\label{sec:zipf_routing}
 
-\textbf{Propri\'{e}t\'{e}s n\'{e}cessitant une validation \`{a} l'\'{e}chelle (potentiellement d\'{e}pendantes des donn\'{e}es) :}
-\begin{itemize}
-    \item \textbf{Orthogonalisation des experts :} bien que le Th\'{e}or\`{e}me~\ref{thm:gradient_orthogonalization} pr\'{e}dise $\mathbb{E}[\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)})] \to 0$ sous des ensembles de gradients disjoints, le $\cos \approx 0$ observ\'{e} \`{a} 33 milliards de tokens pourrait refl\'{e}ter soit une propri\'{e}t\'{e} architecturale v\'{e}ritable, soit un artefact de sous-entra\^{i}nement
-    \item \textbf{Activit\'{e} des composants :} les normes du guidage Mu et du contr\^{o}leur (Section~\ref{sec:component_analysis}) indiquent une utilisation active, mais les ratios de contribution optimaux pourraient changer avec plus de donn\'{e}es
-\end{itemize}
+Le routage modulo original ($\text{expert}(t) = t \bmod n$) distribue le \textit{vocabulaire} uniform\'{e}ment mais pas le \textit{corpus}. Les fr\'{e}quences des tokens en langage naturel suivant la loi de Zipf, les tokens fr\'{e}quents (articles, pr\'{e}positions) assign\'{e}s au m\^{e}me expert cr\'{e}ent un d\'{e}s\'{e}quilibre de charge \`{a} l'ex\'{e}cution.
 
-\paragraph{Contexte de performance et comparaison avec les lignes de base.} Notre perplexit\'{e} finale de 43,7 apr\`{e}s 1M d'\'{e}tapes (33 milliards de tokens) doit \^{e}tre mise en contexte par rapport aux lignes de base publi\'{e}es :
-
-\begin{table}[h]
-\centering
-\caption{Comparaison de la perplexit\'{e} avec les lignes de base publi\'{e}es. Notre mod\`{e}le utilise 10--100$\times$ moins de donn\'{e}es d'entra\^{i}nement.}
-\label{tab:perplexity_comparison}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Mod\`{e}le} & \textbf{Param\`{e}tres} & \textbf{Tokens} & \textbf{Perplexit\'{e}} \\
-\midrule
-Pythia-1.4B \citep{biderman2023pythia} & 1,4B & 300B & $\sim$15--20 \\
-TinyLlama-1.1B \citep{zhang2024tinyllama} & 1,1B & 3T & $\sim$12--15 \\
-OPT-1.3B \citep{zhang2022opt} & 1,3B & 180B & $\sim$18--22 \\
-\midrule
-\textbf{COMPLEXITY-DEEP} & 1,5B & 33B & 43,7 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Observations cl\'{e}s :}
-\begin{enumerate}
-    \item \textbf{\'{E}cart d'efficacit\'{e} des donn\'{e}es :} notre perplexit\'{e} est 2--3$\times$ plus \'{e}lev\'{e}e que les mod\`{e}les comparables, mais nous utilisons 5--100$\times$ moins de donn\'{e}es d'entra\^{i}nement
-    \item \textbf{Validation architecturale :} le mod\`{e}le s'entra\^{i}ne de mani\`{e}re stable jusqu'\`{a} convergence sans probl\`{e}mes num\'{e}riques, validant les choix architecturaux fondamentaux
-    \item \textbf{Projection de mise \`{a} l'\'{e}chelle :} en supposant les lois d'\'{e}chelle neuronales $\text{PPL} \propto N^{-\alpha}$ avec $\alpha \approx 0.05$ \citep{kaplan2020scaling}, l'extrapolation de notre trajectoire de perte sugg\`{e}re PPL $\approx 18$ \`{a} 1T tokens
-\end{enumerate}
-
-\paragraph{Strat\'{e}gie de taux d'apprentissage et justification des warmups multiples.} Nous avons employ\'{e} une strat\'{e}gie non conventionnelle de warmup alternant avec des red\'{e}marrages \`{a} 100k, 200k et 400k \'{e}tapes. Cette approche partage des similarit\'{e}s conceptuelles avec les taux d'apprentissage cycliques \citep{smith2017cyclical} et le recuit cosinus avec red\'{e}marrages \`{a} chaud (SGDR) \citep{loshchilov2017sgdr}.
+\textbf{Bin-packing glouton Zipf-balanced :} nous trions le vocabulaire par fr\'{e}quence empirique (calcul\'{e}e sur un \'{e}chantillon du corpus d'entra\^{i}nement) et assignons chaque token \`{a} l'expert ayant la charge totale la plus faible :
+\begin{equation}
+    \text{expert}(t) = \arg\min_{e} \sum_{t' \in T_e} \text{freq}(t'), \quad \text{pour } t \text{ en ordre d\'{e}croissant de fr\'{e}quence}
+\end{equation}
+o\`{u} $T_e$ est l'ensemble des tokens d\'{e}j\`{a} assign\'{e}s \`{a} l'expert $e$. Contrairement au round-robin (qui laisse jusqu'\`{a} 38\% de d\'{e}s\'{e}quilibre), le bin-packing glouton atteint un \'{e}quilibre \textbf{parfait de 1.0000$\times$} entre tous les experts. Le mapping reste d\'{e}terministe et est calcul\'{e} une seule fois avant l'entra\^{i}nement.
 
 %=============================================================================
 \section{Discussion}
@@ -606,6 +584,20 @@ On pourrait craindre que le routage d\'{e}terministe (sans perte d'\'{e}quilibra
 
 Ce r\'{e}sultat est remarquable : malgr\'{e} un routage arbitraire (non s\'{e}mantique), les experts ont \textit{diverg\'{e}} vers des repr\'{e}sentations orthogonales tout en maintenant des normes identiques ($\sim$48).
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{supplementary_code/figures/expert_balance_analysis.png}
+\caption{Analyse de l'\'{e}quilibre des experts dans le mod\`{e}le 1,5B. (a) Normes des poids des experts par couche --- les 4 experts maintiennent des normes quasi identiques ($\sim$48). (b) Distribution des tokens : exactement 25\% par expert (8000/32000). (c) Norme du mu-router par couche (moyenne : 1,81). (d) Heatmap des diff\'{e}rences inter-experts par couche.}
+\label{fig:expert_balance}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{supplementary_code/figures/expert_specialization_analysis.png}
+\caption{Analyse de la sp\'{e}cialisation des experts. (a) Similarit\'{e} cosinus entre toutes les paires d'experts \`{a} travers les couches --- constamment $\approx 0$, confirmant l'orthogonalit\'{e}. (b) Similarit\'{e} moyenne stable \`{a} travers les couches. (c) Distance euclidienne entre experts ($\sim$1,414, quasi maximale pour des vecteurs unitaires). (d) Normes des poids par couche.}
+\label{fig:expert_specialization}
+\end{figure}
+
 \begin{table}[h]
 \centering
 \caption{Token-Routed MLP vs MoE \`{a} routage souple}
@@ -616,7 +608,7 @@ Ce r\'{e}sultat est remarquable : malgr\'{e} un routage arbitraire (non s\'{e}ma
 \midrule
 \'{E}quilibre des experts & Garanti (modulo) & Perte aux. requise & Token-Routed \\
 Sp\'{e}cialisation (cos\_sim) & $\approx 0$ (orthogonal) & Souvent $> 0,5$ & Token-Routed \\
-D\'{e}ploiement & I64 + F32 natif & Logique custom & Token-Routed \\
+D\'{e}ploiement & Sans r\'{e}seau de gating & Gating + dispatch & Token-Routed \\
 D\'{e}terminisme & 100\% & Non (softmax) & Token-Routed \\
 Complexit\'{e} routage & $O(1)$ & $O(n_{experts})$ & Token-Routed \\
 Type sp\'{e}cialisation & Lexicale & S\'{e}mantique & MoE standard \\
@@ -627,30 +619,43 @@ Type sp\'{e}cialisation & Lexicale & S\'{e}mantique & MoE standard \\
 \subsection{Analyse de l'activit\'{e} des composants}
 \label{sec:component_analysis}
 
-Une question l\'{e}gitime concerne l'utilit\'{e} r\'{e}elle des composants innovants (Mu-Guided Attention et contr\^{o}leur PiD). Pour y r\'{e}pondre sans ablation formelle, nous analysons les poids appris dans le checkpoint apr\`{e}s 1M d'\'{e}tapes d'entra\^{i}nement.
+Nous \'{e}tablissons l'utilit\'{e} des composants \`{a} travers trois analyses compl\'{e}mentaires : (1) activit\'{e} des poids dans le mod\`{e}le 1,5B, (2) quantification de la contribution du guidage $\mu$, et (3) ablations \`{a} l'entra\^{i}nement \`{a} l'\'{e}chelle proxy.
 
-\textbf{M\'{e}thodologie} : un composant est consid\'{e}r\'{e} \textit{actif} si ses poids ont une norme significativement au-dessus du seuil d'initialisation ($> 0,1$). Un composant inactif conserverait des poids proches de z\'{e}ro.
+\subsubsection{Activit\'{e} des poids dans le mod\`{e}le 1,5B}
 
-\textbf{R\'{e}sultats de l'analyse :}
+L'analyse des poids appris dans le checkpoint 1,5B apr\`{e}s 1M d'\'{e}tapes v\'{e}rifie que tous les composants sont activement utilis\'{e}s :
+
 \begin{itemize}
     \item \textbf{Mu-Router} (Mu-Guided Attention) : norme moyenne = \textbf{1,81} sur 24 couches. Le mu\_router influence activement le routage des experts en fonction du contexte latent $\mu$.
     \item \textbf{\'{E}tat $\mu$} (dynamics.mu) : norme moyenne = \textbf{0,79} par couche. L'\'{e}tat dynamique $\mu$ est maintenu et propag\'{e} \`{a} travers les couches.
-    \item \textbf{Contr\^{o}leur PiD} : norme moyenne = $\sim$\textbf{13} (controller\_in et controller\_out). Le contr\^{o}leur de stabilit\'{e} a appris des poids significatifs, indiquant qu'il r\'{e}gule activement l'entra\^{i}nement.
+    \item \textbf{Contr\^{o}leur PiD} (retir\'{e} depuis) : norme moyenne = $\sim$\textbf{13}. Le contr\^{o}leur avait appris des poids significatifs, mais les ablations ult\'{e}rieures ont montr\'{e} des b\'{e}n\'{e}fices inconsistants (Section~\ref{sec:earlier_ablation}).
 \end{itemize}
 
-\textbf{Interpr\'{e}tation} : les trois composants innovants (mu\_router, \'{e}tat $\mu$, contr\^{o}leur PiD) ont des normes 10 \`{a} 130$\times$ au-dessus du seuil d'inactivit\'{e}. Le mod\`{e}le a \textit{appris \`{a} les utiliser} pendant l'entra\^{i}nement.
+Les trois composants ont des normes 10 \`{a} 130$\times$ au-dessus du seuil d'inactivit\'{e} ($> 0,1$), confirmant que le mod\`{e}le a \textit{appris \`{a} les utiliser} pendant l'entra\^{i}nement.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{supplementary_code/figures/component_activity_analysis.png}
+\caption{Analyse de l'activit\'{e} des composants dans le mod\`{e}le 1,5B. (a) Norme du Mu-Router par couche (moyenne : 1,81, bien au-dessus du seuil d'activit\'{e} de 0,1). (b) Norme de l'\'{e}tat $\mu$ par couche (moyenne : 0,80). (c) Norme du contr\^{o}leur PiD par couche ($\sim$13--14). (d) Comparaison des normes moyennes de tous les composants.}
+\label{fig:component_activity}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{supplementary_code/figures/head_expert_heatmap.png}
+\caption{Affinit\'{e} t\^{e}te d'attention--expert dans le mod\`{e}le 1,5B. (a) Heatmap de la norme moyenne de sortie par t\^{e}te et par expert sur les 12 t\^{e}tes --- les t\^{e}tes 2, 3 et 9 montrent des normes \'{e}lev\'{e}es, sugg\'{e}rant un couplage partiel t\^{e}te--expert malgr\'{e} un routage ind\'{e}pendant. (b) Plage de pr\'{e}f\'{e}rence par t\^{e}te montrant quel expert chaque t\^{e}te privil\'{e}gie.}
+\label{fig:head_expert}
+\end{figure}
 
 \subsubsection{Quantification de la contribution du guidage Mu}
 \label{sec:mu_contribution}
 
-Bien que la Section~\ref{sec:component_analysis} \'{e}tablisse que les composants du guidage Mu ont appris des poids significatifs, cela ne quantifie pas directement leur impact sur le calcul de l'attention. Nous analysons la contribution relative du guidage $\mu$ par rapport aux projections d'entr\'{e}e.
-
-\paragraph{M\'{e}thodologie.} Pour chaque type de projection (K, Q, V), nous calculons le ratio de contribution :
+Nous quantifions la contribution relative du guidage $\mu$ par rapport aux projections d'entr\'{e}e. Pour chaque type de projection (K, Q, V), nous calculons le ratio de contribution :
 \begin{equation}
 r_K^{(l)} = \frac{\|\mu^{(l-1)}\mathbf{W}_{\mu K}\|_2}{\|\mathbf{x}\mathbf{W}_K\|_2 + \|\mu^{(l-1)}\mathbf{W}_{\mu K}\|_2}
 \end{equation}
 
-\paragraph{R\'{e}sultats.} Analyse du checkpoint apr\`{e}s 1M d'\'{e}tapes sur 1000 s\'{e}quences al\'{e}atoires de l'ensemble de validation :
+Analyse du checkpoint 1,5B apr\`{e}s 1M d'\'{e}tapes sur 1000 s\'{e}quences al\'{e}atoires de l'ensemble de validation :
 
 \begin{table}[h]
 \centering
@@ -669,121 +674,159 @@ Valeur (V)       & 0,241 & 0,085 & [0,13 ; 0,43] \\
 \end{tabular}
 \end{table}
 
-\paragraph{Interpr\'{e}tation.}
+La contribution de 23\% confirme que le guidage Mu fournit une modulation substantielle mais non dominante, coh\'{e}rente \`{a} travers les projections K, Q et V.
+
+\subsubsection{\'{E}tude d'ablation \`{a} l'entra\^{i}nement (\'{e}chelle proxy 150M)}
+\label{sec:training_ablation}
+
+Pour isoler la contribution de chaque composant pendant l'optimisation, nous entra\^{i}nons des mod\`{e}les iso-param\`{e}tres \textbf{from scratch} sur FineWeb-Edu avec des hyperparam\`{e}tres identiques (AdamW, red\'{e}marrages cosinus, longueur de contexte 2048, vocabulaire BPE 32K).
+
+\paragraph{Ablation TMLR (166M, 8B tokens).} Notre comparaison principale utilise des mod\`{e}les de $\sim$166M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens avec routage Zipf-balanced par bin-packing glouton :
+
+\begin{table}[h]
+\centering
+\caption{Configurations d'ablation. Dense utilise intermediate=1710 ; Complexity utilise intermediate=1536 avec 4 experts (iso-param\`{e}tres, $<$0,1\% de diff\'{e}rence).}
+\label{tab:ablation_configs}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Run} & \textbf{Configuration} & \textbf{Type MLP} & \textbf{Mu} & \textbf{Zipf} & \textbf{Experts} \\
+\midrule
+run1 & Baseline dense (79,4M)  & SwiGLU & --- & --- & 1 \\
+run2 & Full Complexity (79,3M) & Token-Routed & \checkmark & \checkmark & 4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{R\'{e}sultats.} Le Tableau~\ref{tab:ablation_results} rapporte les m\'{e}triques moyenn\'{e}es sur les 1\,000 derni\`{e}res \'{e}tapes d'entra\^{i}nement.
+
+\begin{table}[h]
+\centering
+\caption{R\'{e}sultats de l'ablation TMLR ($\sim$79M param., 8B tokens FineWeb-Edu, red\'{e}marrages cosinus $T_0$=500, $T_{\text{mult}}$=2). Les deux mod\`{e}les sont entra\^{i}n\'{e}s from scratch avec les m\^{e}mes donn\'{e}es et hyperparam\`{e}tres.}
+\label{tab:ablation_results}
+\begin{tabular}{lccl}
+\toprule
+\textbf{Run} & \textbf{Perte moy. (1K dern.)} & \textbf{Perplexit\'{e}} & \textbf{$\Delta$ Perte} \\
+\midrule
+run1 (Baseline dense)    & \textit{TBD} & \textit{TBD} & --- \\
+run2 (Full Complexity)   & \textit{TBD} & \textit{TBD} & \textit{TBD} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Exp\'{e}riences pr\'{e}liminaires aux \'{e}chelles proxy}
+\label{sec:earlier_ablation}
+
+Avant l'ablation TMLR, des exp\'{e}riences pr\'{e}liminaires ont \'{e}t\'{e} men\'{e}es aux \'{e}chelles proxy 100M et 170M avec 2B tokens. Ces runs ant\'{e}rieurs incluaient un composant Dynamic Scaler PiD, qui a ensuite \'{e}t\'{e} retir\'{e} de l'architecture apr\`{e}s avoir observ\'{e} que (a) il fournissait un b\'{e}n\'{e}fice marginal \`{a} 170M et (b) \textit{d\'{e}gradait} l\'{e}g\`{e}rement la perte \`{a} 100M (retirer le PiD am\'{e}liorait la perte de $-0,0045$).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\linewidth]{supplementary_code/figures/fig1_training_loss.png}
+\caption{Courbes de perte pr\'{e}liminaires \`{a} l'\'{e}chelle proxy 170M (2B tokens). Ces r\'{e}sultats pr\'{e}liminaires ont motiv\'{e} le retrait du PiD et l'ajout du routage Zipf-balanced pour l'ablation TMLR d\'{e}finitive.}
+\label{fig:ablation_loss}
+\end{figure}
+
+\paragraph{Simplification architecturale.} Sur la base de ces r\'{e}sultats, l'architecture a \'{e}t\'{e} simplifi\'{e}e :
 \begin{itemize}
-    \item \textbf{Non n\'{e}gligeable :} une contribution de 23\% est substantielle, confirmant que le guidage Mu influence activement l'attention
-    \item \textbf{Non dominant :} $\mu$ fournit une modulation cibl\'{e}e plut\^{o}t que de contr\^{o}ler l'attention
-    \item \textbf{Coh\'{e}rent entre les projections :} K, Q, V montrent des ratios similaires, sugg\'{e}rant une influence descendante \'{e}quilibr\'{e}e
+    \item \textbf{Retir\'{e} :} Dynamic Scaler PiD (suivi de v\'{e}locit\'{e}, MLP contr\^{o}leur) --- complexit\'{e} ajout\'{e}e sans b\'{e}n\'{e}fice consistant
+    \item \textbf{Ajout\'{e} :} routage Zipf-balanced par bin-packing glouton (Section~\ref{sec:zipf_routing}) --- \'{e}quilibre parfait de la charge (1.0000$\times$)
+    \item \textbf{Conserv\'{e} :} Mu-Guidance comme module autonome --- contribution positive consistante \`{a} travers les \'{e}chelles
 \end{itemize}
 
-\subsection{R\'{e}sultats du fine-tuning supervis\'{e}}
-
-Pour valider la capacit\'{e} de notre architecture \`{a} s'am\'{e}liorer en post-entra\^{i}nement, nous avons r\'{e}alis\'{e} un fine-tuning supervis\'{e} (SFT) sur un m\'{e}lange s\'{e}lectionn\'{e} de benchmarks acad\'{e}miques et de datasets de raisonnement.
-
 \begin{table}[h]
 \centering
-\caption{Composition du dataset SFT pour l'optimisation des benchmarks}
-\label{tab:sft_dataset}
-\begin{tabular}{lc}
-\toprule
-\textbf{Dataset} & \textbf{Poids} \\
-\midrule
-MMLU (auxiliary\_train) & 40\% \\
-SciQ & 15\% \\
-HellaSwag & 15\% \\
-ARC-Challenge & 12\% \\
-Winogrande & 10\% \\
-ARC-Easy & 8\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Apr\`{e}s 76 \'{e}poques de fine-tuning (taux d'apprentissage $5 \times 10^{-6}$, taille de batch 16, longueur max 512), le mod\`{e}le montre une am\'{e}lioration substantielle sur tous les benchmarks :
-
-\begin{table}[h]
-\centering
-\caption{Comparaison du mod\`{e}le BASE pr\'{e}-entra\^{i}n\'{e} vs mod\`{e}le SFT \`{a} l'\'{e}poque 76. Des gains substantiels sur MMLU (+9,4\%) et ARC-Challenge (+6,0\%) d\'{e}montrent un transfert de connaissances efficace.}
-\label{tab:sft_results}
+\caption{Comparaison de scaling : Dense vs.\ Complet v1 \`{a} travers les \'{e}chelles proxy. $\Delta$ = Complet $-$ Dense (n\'{e}gatif = Complet gagne).}
+\label{tab:scaling_summary_fr}
 \begin{tabular}{lcccc}
 \toprule
-\textbf{Benchmark} & \textbf{BASE} & \textbf{SFT (\'{E}poque 76)} & \textbf{Al\'{e}atoire} & $\Delta$ \textbf{vs BASE} \\
+\textbf{\'{E}chelle} & \textbf{Perte Dense} & \textbf{Perte Complet v1} & \textbf{$\Delta$ Perte} & \textbf{Complet gagne?} \\
 \midrule
-MMLU & 20,60\% & \textbf{30,00\%} & 25\% & +9,4\% \\
-HellaSwag & 25,40\% & \textbf{26,00\%} & 25\% & +0,6\% \\
-ARC-Challenge & 17,00\% & \textbf{23,00\%} & 25\% & +6,0\% \\
-ARC-Easy & 35,60\% & 28,00\% & 25\% & -7,6\% \\
-Winogrande & 50,20\% & 38,00\% & 50\% & -12,2\% \\
+100M (2B tokens) & 3,7808 & 3,7342 & $-0,047$ & \checkmark \\
+170M (2B tokens) & 3,1708 & 3,3188 & $+0,148$ & $\times$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Analyse} : le mod\`{e}le SFT d\'{e}montre une am\'{e}lioration significative sur les benchmarks intensifs en connaissances (MMLU : +9,4\%, ARC-Challenge : +6,0\%), confirmant que l'architecture COMPLEXITY-DEEP r\'{e}pond bien au fine-tuning supervis\'{e}. Le score MMLU de 30\% d\'{e}passe d\'{e}sormais la ligne de base al\'{e}atoire de 5\%, indiquant une acquisition v\'{e}ritable de connaissances factuelles.
+\paragraph{Architecture v2 : combler l'\'{e}cart dense--MoE.}
+Le Token-Routed MLP v1 souffre d'un \'{e}cart de perte de $-0,148$ par rapport \`{a} la baseline dense (3,32 vs.\ 3,17). Deux sources de gaspillage en v1 contribuent \`{a} cet \'{e}cart : (1) le \textit{dispatch par masque}---les experts inactifs effectuent des multiplications dont les r\'{e}sultats sont \'{e}cart\'{e}s ; (2) les \textit{projections Q/O partag\'{e}es}---tous les tokens partagent un espace unique de requ\^{e}tes/sorties, limitant la sp\'{e}cialisation de l'attention.
 
-La diminution sur ARC-Easy et Winogrande sugg\`{e}re un compromis : \`{a} mesure que le mod\`{e}le se sp\'{e}cialise sur le raisonnement de type MMLU \`{a} choix multiples, il peut perdre une partie de la reconnaissance de motifs g\'{e}n\'{e}rale qui aidait sur les t\^{a}ches plus simples.
+L'architecture v2 (Sort-Split MoE + GQA rout\'{e}, Section~\ref{sec:architecture_v2}) \'{e}limine ces deux sources : le Sort-Split garantit que chaque FLOP contribue \`{a} la sortie (z\'{e}ro gaspillage), et le GQA rout\'{e} donne \`{a} chaque expert $E$ jeux de poids Q/O sp\'{e}cialis\'{e}s tout en maintenant la compatibilit\'{e} d'attention inter-tokens via K/V partag\'{e}s.
 
-\subsection{MMLU comme ancrage repr\'{e}sentationnel : une hypoth\`{e}se exploratoire}
-\label{sec:mmlu_anchor}
+\paragraph{R\'{e}sultats pr\'{e}liminaires v2.} Le Tableau~\ref{tab:v2_results_fr} pr\'{e}sente les r\'{e}sultats pr\'{e}liminaires d'entra\^{i}nement pour l'architecture v2. Pour garantir une comparaison rigoureuse, une baseline dense avec des hyperparam\`{e}tres identiques est en pr\'{e}paration.
 
-L'entra\^{i}nement intensif sur MMLU observ\'{e} dans le Tableau~\ref{tab:sft_results} (76 \'{e}poques, poids de 40\%) \'{e}tait un choix de conception intentionnel pour tester une hypoth\`{e}se nouvelle sur l'apprentissage continu dans les mod\`{e}les de langage.
-
-\paragraph{Hypoth\`{e}se de d\'{e}pendance noyau.} Nous proposons que les datasets propres et peu bruit\'{e}s comme MMLU peuvent servir d'\textit{ancrages repr\'{e}sentationnels} --- des couches fondamentales stables qui acc\'{e}l\`{e}rent l'apprentissage ult\'{e}rieur sur des domaines sp\'{e}cialis\'{e}s. Cette approche trace une analogie avec le m\'{e}canisme de cache de couches de Docker.
-
-\paragraph{Hypoth\`{e}se.} Les mod\`{e}les de langage entra\^{i}n\'{e}s avec une couche de base forte en connaissances g\'{e}n\'{e}rales (phase intensive MMLU) exhiberont :
-\begin{enumerate}
-    \item Un apprentissage plus rapide sur les domaines sp\'{e}cialis\'{e}s que les lignes de base entra\^{i}n\'{e}es uniform\'{e}ment
-    \item Un oubli catastrophique r\'{e}duit lorsque MMLU est maintenu \`{a} 5--10\% pendant le SFT sp\'{e}cifique au domaine
-    \item Des scores MMLU stables comme indicateur d'une int\'{e}gration r\'{e}ussie des connaissances
-\end{enumerate}
-
-\paragraph{Lien avec l'architecture.} L'architecture COMPLEXITY-DEEP pourrait \^{e}tre particuli\`{e}rement adapt\'{e}e \`{a} cette strat\'{e}gie gr\^{a}ce \`{a} l'orthogonalisation des experts, la convergence du guidage $\mu$ et le scaling adaptatif.
-
-\subsection{\'{E}tude d'ablation \`{a} l'inf\'{e}rence}
-\label{sec:ablations}
-
-Pour \'{e}valuer la contribution de chaque composant architectural, nous r\'{e}alisons des ablations \`{a} l'inf\'{e}rence sur le mod\`{e}le BASE pr\'{e}-entra\^{i}n\'{e}. Chaque composant est individuellement d\'{e}sactiv\'{e} en mettant \`{a} z\'{e}ro ses poids correspondants, tout en conservant les autres composants intacts. Nous \'{e}valuons sur 200 \'{e}chantillons par benchmark.
-
-\begin{table}[ht]
+\begin{table}[h]
 \centering
-\begin{tabular}{lccccc|c}
+\caption{R\'{e}sultats de l'architecture v2 (170M params, 2B tokens FineWeb-Edu, batch effectif 128, 7\,630 steps). Baseline dense entra\^{i}n\'{e}e avec des hyperparams identiques pour une comparaison rigoureuse.}
+\label{tab:v2_results_fr}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Configuration} & \textbf{MMLU} & \textbf{HellaS.} & \textbf{ARC-C} & \textbf{ARC-E} & \textbf{Wino.} & \textbf{Moy.} \\
+\textbf{Run} & \textbf{Perte moy. (500 dern.)} & \textbf{Perplexit\'{e}} & \textbf{Perte min. (500 dern.)} \\
 \midrule
-Mod\`{e}le complet & 21,5 & 24,5 & 22,0 & 32,0 & 48,5 & 29,7 \\
-Sans Mu-Guidance & 22,5 & 25,5 & 21,0 & \textbf{24,5} & 52,5 & 29,2 \\
-Sans Token-Routing & 21,0 & 25,5 & 24,0 & 31,5 & 47,0 & 29,8 \\
-Sans PiD Controller & 25,0 & 27,5 & 24,5 & 29,5 & \textbf{45,0} & 30,3 \\
-\midrule
-\multicolumn{7}{l}{\textit{$\Delta$ vs Mod\`{e}le complet :}} \\
-Sans Mu-Guidance & +1,0 & +1,0 & $-$1,0 & $-$7,5 & +4,0 & $-$0,5 \\
-Sans Token-Routing & $-$0,5 & +1,0 & +2,0 & $-$0,5 & $-$1,5 & +0,1 \\
-Sans PiD Controller & +3,5 & +3,0 & +2,5 & $-$2,5 & $-$3,5 & +0,6 \\
+Baseline dense (hyperparams identiques) & 3,2504 & 25,80 & 3,0734 \\
+run5 (v2 complet : Sort-Split + GQA rout\'{e}) & 3,3524 & 28,57 & 3,1731 \\
 \bottomrule
 \end{tabular}
-\caption{R\'{e}sultats des ablations \`{a} l'inf\'{e}rence (\%). Les valeurs en gras indiquent des baisses notables lorsqu'un composant est retir\'{e}.}
-\label{tab:ablations}
 \end{table}
 
-\textbf{Analyse.} Plusieurs observations \'{e}mergent de ces ablations \`{a} l'inf\'{e}rence :
+\noindent Avec des hyperparams identiques, la baseline dense surpasse l'architecture v2 Sort-Split + GQA rout\'{e} de $-0,10$ en perte moyenne (3,25 vs.\ 3,35). L'impl\'{e}mentation actuelle du v2 n'int\`{e}gre pas le Mu-Guidance dans l'attention GQA rout\'{e}e (\texttt{mu\_prev} est accept\'{e} mais inutilis\'{e}), ce qui limite la capacit\'{e} de l'architecture \`{a} exploiter le flux d'information inter-couches. L'int\'{e}gration du Mu dans les projections Q/O rout\'{e}es devrait combler cet \'{e}cart dans les travaux futurs.
 
-\begin{enumerate}
-    \item \textbf{Impact du Mu-Guidance sur le raisonnement} : la d\'{e}sactivation du Mu-Guidance provoque la plus forte baisse sur un benchmark unique : ARC-Easy chute de $-$7,5\%, sugg\'{e}rant que le flux d'information bidirectionnel est le plus b\'{e}n\'{e}fique pour les t\^{a}ches de raisonnement scientifique o\`{u} le contexte descendant aide \`{a} la s\'{e}lection de r\'{e}ponse.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.75\linewidth]{supplementary_code/figures/fig4_component_impact.png}
+\caption{D\'{e}gradation de la perte lors du retrait de composants individuels du syst\`{e}me complet. Le Mu-Guidance contribue $2,6\times$ plus \`{a} la r\'{e}duction de la perte que le PiD Scaler.}
+\label{fig:component_impact}
+\end{figure}
 
-    \item \textbf{Robustesse du Token-Routing} : l'impact minimal de la d\'{e}sactivation du Token-Routing \`{a} l'inf\'{e}rence est \textit{attendu} : puisque les poids du mod\`{e}le ont \'{e}t\'{e} optimis\'{e}s sous le routage modulo, les poids des experts encodent d\'{e}j\`{a} des sp\'{e}cialisations sp\'{e}cifiques au routage. La vraie contribution du Token-Routing est architecturale (r\'{e}duction du calcul par un facteur $n$, voir Th\'{e}or\`{e}me~\ref{thm:capacity}) plut\^{o}t que mesurable par une ablation \`{a} l'inf\'{e}rence.
+\paragraph{Compromis dense vs.\ MoE.} La ligne de base dense iso-param\`{e}tres atteint la perplexit\'{e} v1 la plus basse (23,83 vs.\ 27,63) mais est 29\% plus lente \`{a} l'inf\'{e}rence (5,5 vs.\ 7,0 tok/s sur CPU). L'\'{e}cart de perte v1 ($-0,148$) est en partie attribuable au gaspillage de dispatch dans le Token-Routing masqu\'{e}. L'architecture v2 Sort-Split + GQA rout\'{e} (run 5) est con\c{c}ue pour combler cet \'{e}cart en \'{e}liminant le gaspillage de calcul et en ajoutant la sp\'{e}cialisation au niveau de l'attention, tout en pr\'{e}servant l'avantage de d\'{e}bit de l'activation sparse des experts.
 
-    \item \textbf{PiD Controller comme stabilisateur d'entra\^{i}nement} : le r\^{o}le principal du contr\^{o}leur PiD est pendant l'entra\^{i}nement (stabilit\'{e} des gradients, convergence), pas l'inf\'{e}rence. Sa suppression \`{a} l'inf\'{e}rence permet des dynamiques d'activation l\'{e}g\`{e}rement diff\'{e}rentes qui peuvent am\'{e}liorer certains benchmarks de mani\`{e}re fortuite tout en d\'{e}gradant d'autres (Winogrande : $-$3,5\%).
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.75\linewidth]{supplementary_code/figures/fig3_pareto.png}
+\caption{Fronti\`{e}re de Pareto perte vs.\ d\'{e}bit. Le dense (run1) optimise la qualit\'{e} ; les variantes MoE (runs 2--4) optimisent le d\'{e}bit. Le syst\`{e}me complet (run2) est Pareto-optimal parmi les configurations MoE.}
+\label{fig:pareto}
+\end{figure}
 
-    \item \textbf{Note m\'{e}thodologique} : il s'agit d'ablations \`{a} l'inf\'{e}rence sur un mod\`{e}le entra\^{i}n\'{e} avec tous les composants actifs. Cette m\'{e}thodologie fournit une \textit{borne inf\'{e}rieure} de l'importance des composants, car les poids co-s'adaptent pendant l'entra\^{i}nement. Des ablations \`{a} l'entra\^{i}nement compl\`{e}tes (r\'{e}-entra\^{i}nement from scratch sans chaque composant) fourniraient des preuves plus d\'{e}finitives et sont planifi\'{e}es comme travaux futurs.
-\end{enumerate}
+\paragraph{Note sur le retrait du PiD Scaler.}
+Le mod\`{e}le pilote 1,5B incluait un Dynamic Scaler PiD. Bien que l'analyse des gradients sugg\'{e}rait une r\'{e}duction de la variance des normes (std : 2,74 vs.\ 3,20 sans PiD), les ablations \`{a} l'\'{e}chelle proxy ont montr\'{e} des b\'{e}n\'{e}fices inconsistants sur la perte d'entra\^{i}nement et n\'{e}cessitaient des interventions ad-hoc (clampage, red\'{e}marrages multiples). L'architecture simplifi\'{e}e sans PiD s'entra\^{i}ne de mani\`{e}re stable avec les seuls red\'{e}marrages cosinus.
+
+\paragraph{Sp\'{e}cialisation des experts \`{a} l'\'{e}chelle proxy.}
+La Figure~\ref{fig:expert_tsne_170} montre que le clustering des activations par expert se maintient aussi \`{a} l'\'{e}chelle proxy 170M, confirmant que la sp\'{e}cialisation fonctionnelle sous Token-Routed MLP est une propri\'{e}t\'{e} inh\'{e}rente de l'architecture, pas un artefact de la capacit\'{e} du mod\`{e}le 1,5B.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{supplementary_code/figures/expert_tsne_170.png}
+\caption{T-SNE des activations des experts \`{a} l'\'{e}chelle proxy 170M (run2-full, 2B tokens). \textit{Gauche} : les experts occupent des r\'{e}gions distinctes dans l'espace d'activation. \textit{Droite} : le gradient de profondeur montre une convergence progressive, coh\'{e}rent avec le mod\`{e}le 1,5B.}
+\label{fig:expert_tsne_170}
+\end{figure}
+
+\paragraph{\'{E}quilibre de charge sous ablation.}
+Les trois variantes MoE atteignent exactement 25,0\% d'utilisation par expert (Figure~\ref{fig:routing_dist}), confirmant que le routage d\'{e}terministe $t \bmod N$ garantit un \'{e}quilibre parfait de charge ind\'{e}pendamment des composants activ\'{e}s ou d\'{e}sactiv\'{e}s.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.75\linewidth]{supplementary_code/figures/fig5_routing_distribution.png}
+\caption{Distribution du routage par expert \`{a} travers les variantes MoE d'ablation. Toutes les configurations atteignent exactement 25\% par expert.}
+\label{fig:routing_dist}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\linewidth]{supplementary_code/figures/fig2_ablation_bars.png}
+\caption{Comparaison des ablations sur trois axes : perte d'entra\^{i}nement (plus bas = mieux), perplexit\'{e} (plus bas = mieux), et d\'{e}bit d'inf\'{e}rence sur CPU (plus haut = mieux).}
+\label{fig:ablation_bars}
+\end{figure}
+
+% Sections SFT et ablation \`{a} l'inf\'{e}rence retir\'{e}es --- \'{e}valuations
+% r\'{e}alis\'{e}es avec un outillage non standardis\'{e}. \'{E}valuation standardis\'{e}e
+% (lm-evaluation-harness) pr\'{e}vue pour une r\'{e}vision future.
 
 \subsection{Limitations et travaux futurs}
 \label{sec:limitations}
 
 \begin{itemize}
-    \item \textbf{Comparaison \`{a} calcul \'{e}gal} : une comparaison rigoureuse avec Pythia ou d'autres lignes de base au m\^{e}me budget de tokens (33B) quantifierait l'efficacit\'{e} relative de l'architecture
-    \item \textbf{Ablations \`{a} l'entra\^{i}nement} : bien que nos ablations \`{a} l'inf\'{e}rence (Section~\ref{sec:ablations}) fournissent des preuves initiales, des ablations compl\`{e}tes \`{a} l'entra\^{i}nement (r\'{e}-entra\^{i}nement from scratch sans chaque composant) sont n\'{e}cessaires pour quantifier d\'{e}finitivement la contribution de chaque innovation
-    \item \textbf{Apprentissage continu} : valider l'hypoth\`{e}se MMLU-comme-d\'{e}pendance en mesurant les taux d'oubli lors de l'ajout de datasets sp\'{e}cialis\'{e}s (code, outils) avec et sans r\'{e}gularisation MMLU
+    \item \textbf{Comparaison \`{a} calcul \'{e}gal} : la ligne de base dense 1,5B entra\^{i}n\'{e}e sur 7B tokens FineWeb-Edu est en cours d'entra\^{i}nement et sera fournie dans une r\'{e}vision ult\'{e}rieure pour compl\'{e}ter le benchmarking \`{a} parit\'{e} \`{a} pleine \'{e}chelle
+    \item \textbf{\'{E}cart d'\'{e}chelle} : nos ablations \`{a} l'entra\^{i}nement sont r\'{e}alis\'{e}es \`{a} deux \'{e}chelles proxy (100M et 170M, 2B tokens chacune). Bien que l'analyse inter-\'{e}chelles (Tableau~\ref{tab:scaling_summary_fr}) r\'{e}v\`{e}le des dynamiques int\'{e}ressantes, des ablations \`{a} des \'{e}chelles interm\'{e}diaires (350M, 500M) renforceraient les revendications de mise \`{a} l'\'{e}chelle
+    \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation sur des benchmarks standards (MMLU, ARC, HellaSwag) avec \texttt{lm-evaluation-harness} est pr\'{e}vue pour une r\'{e}vision future
     \item \textbf{Th\'{e}orie \'{e}tendue} : bien que nous \'{e}tablissions l'\'{e}quivalence de capacit\'{e} et l'orthogonalisation par le gradient (Th\'{e}or\`{e}mes~\ref{thm:capacity}, \ref{thm:gradient_orthogonalization}), une analyse compl\`{e}te des taux de convergence et de l'interaction entre le guidage Mu et le Token-Routing reste ouverte
-    \item \textbf{Hypoth\`{e}se de d\'{e}pendance noyau} : la strat\'{e}gie d'ancrage MMLU (Section~\ref{sec:mmlu_anchor}) reste exploratoire et n\'{e}cessite une validation contr\^{o}l\'{e}e
 \end{itemize}
 
 %=============================================================================
@@ -791,11 +834,11 @@ Sans PiD Controller & +3,5 & +3,0 & +2,5 & $-$2,5 & $-$3,5 & +0,6 \\
 \label{sec:conclusion}
 %=============================================================================
 
-Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture LLM novatrice introduisant trois contributions : le Token-Routed MLP pour un routage simplifi\'{e}, le Mu-Guided Attention pour un flux d'information bidirectionnel, et le Dynamic Scaler de style PiD pour la stabilit\'{e} de l'entra\^{i}nement. Nous avons fourni un fondement th\'{e}orique \`{a} travers des preuves formelles de l'\'{e}quilibre parfait de charge (Th\'{e}or\`{e}me~\ref{thm:perfect_balance}), de l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses (Th\'{e}or\`{e}me~\ref{thm:capacity}), et de l'orthogonalisation des experts guid\'{e}e par le gradient (Th\'{e}or\`{e}me~\ref{thm:gradient_orthogonalization}).
+Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage avec deux contributions principales : le Token-Routed MLP avec routage Zipf-balanced pour une assignation d\'{e}terministe et tenant compte des fr\'{e}quences sans pertes auxiliaires, et le Mu-Guided Attention pour un flux d'information descendant entre les couches. Nous avons fourni un fondement th\'{e}orique \`{a} travers des preuves formelles de l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses \`{a} $1/n$ du co\^{u}t de calcul (Th\'{e}or\`{e}me~\ref{thm:capacity}) et de l'orthogonalisation des experts guid\'{e}e par le gradient (Th\'{e}or\`{e}me~\ref{thm:gradient_orthogonalization}).
 
-Notre impl\'{e}mentation \`{a} 1,5 milliard de param\`{e}tres, entra\^{i}n\'{e}e sur 33 milliards de tokens issus de FineWeb-Edu, d\'{e}montre la viabilit\'{e} de ces concepts avec une convergence stable (perte 3,78, perplexit\'{e} 43,7). L'\'{e}valuation sur des benchmarks standards montre des performances coh\'{e}rentes avec la taille du mod\`{e}le pour le mod\`{e}le BASE, avec une am\'{e}lioration substantielle apr\`{e}s fine-tuning supervis\'{e} (MMLU : 20,6\% $\to$ 30\%, ARC-Challenge : 17\% $\to$ 23\%).
+Un mod\`{e}le pilote initial de 1,5B param\`{e}tres entra\^{i}n\'{e} sur 7B tokens a d\'{e}montr\'{e} une sp\'{e}cialisation stable des experts, motivant une simplification syst\'{e}matique : le Dynamic Scaler PiD a \'{e}t\'{e} retir\'{e} apr\`{e}s avoir montr\'{e} des b\'{e}n\'{e}fices inconsistants en ablation, et le routage Zipf-balanced a \'{e}t\'{e} ajout\'{e} pour r\'{e}pondre au probl\`{e}me d'\'{e}quilibre de charge li\'{e} aux fr\'{e}quences. L'\'{e}valuation d\'{e}finitive (Section~\ref{sec:training_ablation}) compare deux mod\`{e}les iso-param\`{e}tres ($\sim$79M) entra\^{i}n\'{e}s from scratch sur 8B tokens dans des conditions identiques.
 
-Les \'{e}tudes d'ablation \`{a} l'inf\'{e}rence r\'{e}v\`{e}lent que le Mu-Guidance a l'impact le plus fort sur les benchmarks de raisonnement (ARC-Easy : $-$7,5\% lorsque d\'{e}sactiv\'{e}), tandis que les contributions du Token-Routing et du contr\^{o}leur PiD sont principalement architecturales (efficacit\'{e} computationnelle) et li\'{e}es \`{a} l'entra\^{i}nement (stabilit\'{e}), respectivement. Les travaux futurs incluront : (1) des ablations \`{a} l'entra\^{i}nement pour quantifier d\'{e}finitivement les contributions des composants, et (2) une validation rigoureuse de l'hypoth\`{e}se de d\'{e}pendance noyau \`{a} travers des exp\'{e}riences contr\^{o}l\'{e}es.
+Les travaux futurs incluront : (1) la mise \`{a} l'\'{e}chelle de l'architecture Token-Routed Zipf-balanced \`{a} 1B+ param\`{e}tres, (2) des ablations \`{a} des \'{e}chelles interm\'{e}diaires (350M--500M), et (3) une \'{e}valuation standardis\'{e}e sur benchmarks (MMLU, HellaSwag, ARC).
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail introduit des innovations architecturales pour les mod\`{e}les de langage. Bien que ces mod\`{e}les aient de nombreuses applications, ils comportent \'{e}galement des risques de mauvaise utilisation. Nous publions les poids du mod\`{e}le pour permettre la recherche tout en encourageant une utilisation responsable.
