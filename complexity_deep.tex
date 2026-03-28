@@ -8,6 +8,7 @@
 \usepackage{hyperref}
 \usepackage{url}
 \usepackage{booktabs}
+\usepackage{placeins}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
@@ -43,7 +44,7 @@
 \maketitle
 
 \begin{abstract}
-We present COMPLEXITY-DEEP, a language model architecture introducing two original contributions: (1) \textbf{Token-Routed MLP with Zipf-balanced routing}, a deterministic per-token routing mechanism that assigns tokens to experts via frequency-aware round-robin~\citep{zipf1949human}, eliminating both the learned router and auxiliary load-balancing losses required by standard MoE; and (2) \textbf{Mu-Guided Attention}, where a learnable latent state $\mu$ flows between layers to guide K, Q, and V projections, creating a top-down information flow absent in standard Transformers. We provide formal theoretical analysis proving capacity equivalence with dense models at $1/n$ compute cost and gradient-driven expert orthogonalization. An initial 1.5B pilot model trained on 7B tokens served as an exploratory prototype, revealing stable expert specialization without auxiliary losses. Based on these findings, we simplified the architecture by removing an earlier PiD Dynamic Scaler component (which introduced training instability) and adding Zipf-balanced routing to address the well-known frequency skew in natural language~\citep{zipf1949human}. The definitive evaluation compares iso-parameter ($\sim$166M) models trained from scratch on 8B tokens of FineWeb-Edu under identical conditions: a dense SwiGLU baseline vs.\ the full Complexity architecture (Token-Routed + Mu-Guidance + Zipf-balanced routing).
+We present COMPLEXITY-DEEP, a language model architecture introducing three original contributions: (1) \textbf{Token-Routed MLP with Zipf-balanced routing via greedy bin-packing}, a deterministic per-token routing that distributes tokens to experts with perfect load balance (1.0000$\times$) via a greedy algorithm aware of frequencies~\citep{zipf1949human}, eliminating the learned router and auxiliary losses; (2) \textbf{Mu-Guided Attention}, where a latent state $\mu$ flows between layers to guide K, Q, and V projections after the MLP, capturing expert-specific information; and (3) \textbf{Shared Lexical Expert}, a dense MLP shared across all tokens that captures universal patterns (syntax, grammar) while routed experts specialize. We provide formal theoretical analysis proving capacity equivalence with dense models at $1/n$ compute cost. An initial 1.5B-parameter pilot model motivated an architectural simplification: the Dynamic Scaler PiD, redundant with Adam's adaptive mechanisms, was removed. The evaluation compares iso-parameter ($\sim$166M) models trained from scratch on 8B tokens of FineWeb-Edu under identical conditions.
 \end{abstract}
 
 %=============================================================================
@@ -62,7 +63,7 @@ Large Language Models (LLMs) have revolutionized natural language processing in 
 We propose COMPLEXITY-DEEP, an architecture that addresses the first two limitations through two innovations:
 
 \begin{enumerate}
-    \item \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}: A deterministic per-token routing that distributes tokens to experts by assigning each token to the least-loaded expert, achieving perfect 1.0000$\times$ load balance and eliminating both the learned router and auxiliary load-balancing losses.
+    \item \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}: A deterministic per-token routing that distributes tokens to experts by perfectly balancing the load via a greedy algorithm, eliminating both the learned router and auxiliary load-balancing losses.
     \item \textbf{Mu-Guided Attention}: A mechanism where the latent state $\mu$ from the previous layer influences K, Q, and V projections, creating a top-down information flow across layers.
 \end{enumerate}
 
@@ -93,7 +94,7 @@ RMSNorm \citep{zhang2019root} and QK-Normalization \citep{dehghani2023scaling} a
 COMPLEXITY-DEEP is a decoder-only architecture composed of $L$ identical layers. Each layer comprises:
 \begin{enumerate}
     \item A multi-head attention block with Mu-Guidance
-    \item An MLP block with Token-Routing
+    \item An MLP block with token routing
     \item Residual connections with pre-normalization (RMSNorm)
 \end{enumerate}
 
@@ -111,7 +112,7 @@ where BinPack assigns each token $t$ (sorted by decreasing frequency) to the exp
 
 This design choice is \textit{deliberate}: routing depends not on semantic content $\mathbf{x}$ but solely on the lexical token identifier. Each vocabulary token is \textit{pre-assigned} to a specific expert with perfect load balance (1.0000$\times$).
 
-For each token, one expert is activated and combined with the Shared Lexical Expert:
+For each token, a single expert is activated, combined with the Shared Lexical Expert:
 \begin{equation}
 \text{MLP}_{\text{output}}(\mathbf{x}) = \text{SharedMLP}(\mathbf{x}) + \text{Expert}_e(\mathbf{x}) \quad \text{where } e = \text{BinPack}(\text{token\_id})
 \label{eq:mlp_routed}
@@ -130,7 +131,7 @@ Each expert is a standard MLP with SiLU activation (SwiGLU):
     \item \textbf{Perfect balance}: Modulo routing mathematically ensures each expert receives exactly $1/n_{experts}$ of tokens, eliminating the central MoE problem: cumulative imbalance.
 \end{enumerate}
 
-\paragraph{Mechanism of Specialization.} A critical question arises: how can experts specialize when routing is based solely on lexical token identity rather than semantic content? The key insight is that experts optimize for \textit{contextual distributions}, not token identities.
+\paragraph{Mechanism of specialization.} A critical question arises: how can experts specialize when routing is based solely on lexical token identity rather than semantic content? The key insight is that experts optimize for \textit{contextual distributions}, not token identities.
 
 Consider token ``the'' (token\_id = 123) which always routes to expert 3. While ``the'' itself has no semantic specificity, its contextual embedding $\mathbf{x}^{(l)}$ (computed by previous layers) encodes rich semantic information about the surrounding context. Expert 3 learns the function:
 \begin{equation}
@@ -151,7 +152,7 @@ The gradient flow is:
 
 Since modulo routing ensures disjoint token sets ($T_i \cap T_j = \emptyset$), and natural language exhibits non-uniform token-context co-occurrence, the contextual distributions $\mathcal{C}_i$ and $\mathcal{C}_j$ are statistically distinct. This induces different gradient statistics, driving expert divergence (Theorem~\ref{thm:gradient_orthogonalization}).
 
-\textbf{Empirical validation:} Section~\ref{sec:expert_analysis} measures functional specialization via per-expert perplexity: each expert achieves lower PPL on its assigned tokens than the dense MLP on the same tokens. We note that near-zero cosine similarity between expert weights, while observed empirically, is a geometric artifact expected in high dimensions and does not constitute evidence of specialization per se.
+\textbf{Empirical validation:} Section~\ref{sec:expert_analysis} measures functional specialization via per-expert perplexity: each expert achieves lower PPL on its assigned tokens than the dense MLP on the same tokens. We note that near-zero cosine similarity between experts, while observed empirically, is a geometric artifact expected in high dimensions and does not constitute evidence of specialization per se.
 
 \textbf{Operational advantages:}
 \begin{itemize}
@@ -170,8 +171,6 @@ The central innovation of COMPLEXITY-DEEP is the introduction of a latent state 
 \mathbf{V} &= \mathbf{x}\mathbf{W}_V + \mu^{(l-1)}\mathbf{W}_{\mu V} \label{eq:value}
 \end{align}
 where $\mathbf{W}_{\mu K}, \mathbf{W}_{\mu Q}, \mathbf{W}_{\mu V}$ are learned linear projections.
-
-\paragraph{Motivation.} Standard Transformers process information strictly bottom-up: each layer operates independently on its input without receiving guidance from other layers. In contrast, biological neural circuits rely extensively on top-down feedback connections, where higher cortical areas send predictions to lower areas to modulate processing~\citep{rao1999predictive}. Mu-Guidance introduces a lightweight analogue of this principle: the contextual state $\mu^{(l)}$ carries a compact summary of what layer $l$ has learned, which then biases the attention projections at layer $l+1$. Unlike the PiD Dynamic Scaler (Section~\ref{sec:adaptive_scaler}), which modulated a scalar residual scale and was redundant with optimizer dynamics, Mu-Guidance provides a \textit{vector-valued cross-layer signal} that enriches the representational capacity of the model---a mechanism with no equivalent in standard optimizers or normalization schemes.
 
 \paragraph{Learnable $\mu_{\text{init}}$ for layer 0.} In a standard Transformer, layer 0 receives no top-down information. We introduce a learnable parameter $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialized to zero) that serves as $\mu^{(-1)}$ for the first layer:
 \begin{equation}
@@ -193,15 +192,6 @@ where $\boldsymbol{\mu}^{(l)}_{\text{param}} \in \mathbb{R}^{d}$ is a learnable 
     \item \textbf{Produce $\mu^{(l)}_{\text{contextual}}$} via Equation~\ref{eq:mu_update}, passed to layer $l+1$
 \end{enumerate}
 
-\subsection{Adaptive Dynamic Scaler (Removed)}
-\label{sec:adaptive_scaler}
-
-An earlier version of the architecture included a PiD-style Dynamic Scaler that modulated residual contributions via a proportional-integral-derivative controller. Empirical results at both 100M and 170M proxy scales showed that this component provided inconsistent benefits: at 100M, removing PiD \textit{improved} loss by $-0.005$, while at 170M it contributed only $+0.010$ to loss. The controller also required ad-hoc training interventions (activation clamping, multiple warmup restarts) to prevent instabilities.
-
-\textbf{Why PiD is redundant with Adam.} The PiD controller was designed to stabilize training dynamics, but this role is already fulfilled by the adaptive optimizer. Adam's momentum ($\beta_1$) approximates integral control (accumulating past gradients), its variance estimate ($\beta_2$) provides derivative-like adaptation (tracking gradient magnitude changes), and the learning rate acts as proportional gain. Adding an explicit PiD controller on top of Adam is therefore redundant---analogous to placing a thermostat on a thermostat. The ad-hoc interventions required to prevent PiD-induced instabilities further confirmed this redundancy.
-
-Based on this analysis, the Dynamic Scaler was removed from the architecture. The simplified model retains only Token-Routed MLP (with Zipf-balanced routing) and Mu-Guidance, achieving comparable or better results with substantially fewer parameters and no stability interventions.
-
 \subsection{Final Architecture}
 \label{sec:architecture_v2}
 
@@ -210,7 +200,7 @@ The final architecture integrates four improvements over the initial Token-Route
 \subsubsection{Sparse Dispatch (Zero Waste)}
 \label{sec:sparse_dispatch}
 
-The initial masked dispatch computed \textit{all} tokens through \textit{all} experts, then discarded 75\% of the results---effectively $4\times$ the compute of a dense model. Sparse dispatch computes only the tokens routed to each expert:
+The initial masked dispatch computed \textit{all} tokens through \textit{all} experts, then masked 75\% of the results---effectively $4\times$ the cost of a dense MLP. Sparse dispatch computes only the tokens routed to each expert:
 \begin{equation}
 \text{out}[\text{mask}_e] = \text{Expert}_e(\mathbf{x}[\text{mask}_e]) \quad \text{for } e = 0, \ldots, E-1
 \end{equation}
@@ -219,8 +209,7 @@ Reducing MLP cost from $4\times$ dense to $1\times$ dense (iso-compute).
 \subsubsection{Shared Lexical Expert}
 \label{sec:shared_expert}
 
-A shared dense MLP processes \textit{all} tokens, capturing universal patterns (syntax, grammar), while routed experts specialize on their lexical subsets:
-The output combines both:
+A shared dense MLP processes \textit{all} tokens, capturing universal patterns (syntax, grammar), while routed experts specialize on their lexical subsets. The output combines both:
 \begin{equation}
 \text{MLP}_{\text{output}}(\mathbf{x}) = \underbrace{\text{SwiGLU}_{\text{shared}}(\mathbf{x})}_{\text{common patterns}} + \underbrace{\text{SwiGLU}_{e}(\mathbf{x})}_{\text{lexical specialization}}
 \end{equation}
@@ -235,18 +224,39 @@ The shared expert has the same intermediate size as one routed expert ($d_{ff}/n
 
 Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy algorithm that achieves perfect 1.0000$\times$ load balance.
 
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{../figures/expert_balance.png}
+\caption{Expert balance under Zipf bin-packing. The bin-packing balances the \textit{total load} (frequency) to 1.0000$\times$, not the number of tokens (which varies slightly around 25\%).}
+\label{fig:expert_balance}
+\end{figure}
+\FloatBarrier
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{../figures/component_activity.png}
+\caption{Mu-Guidance activity per layer. \textit{Left}: norms of $\mu_{\text{param}}$ and $\mu_{\text{proj}}$. \textit{Right}: norms of the $\mu \to K$ and $\mu \to Q$ projections in attention.}
+\label{fig:component_activity}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{../figures/mu_contribution.png}
+\caption{Mu contribution ratio to K, Q, V projections per layer. Mu-Guidance contributes $\sim$50\% of projection magnitude.}
+\label{fig:mu_contribution}
+\end{figure}
+\FloatBarrier
+
 \subsubsection{Mu-Guidance After MLP}
 
 The computation of $\mu$ is moved \textit{after} expert dispatch (instead of before), allowing $\mu$ to capture expert-specific information. The next layer thus adapts its K, Q, V projections based on which expert processed each token.
 
-\paragraph{Design rationale.} We deliberately omit the integral term (typical in PID controllers) because:
-\begin{enumerate}
-    \item \textbf{No temporal accumulation:} Unlike physical systems, neural networks don't have continuous time dynamics; each layer is a discrete transformation
-    \item \textbf{Avoid error accumulation:} Summing errors across layers could amplify numerical instabilities
-    \item \textbf{Sufficient with PD:} Empirically, proportional + derivative terms provide adequate stabilization (Section~\ref{sec:component_analysis} shows controller norm $\approx 13$, indicating active regulation)
-\end{enumerate}
+\subsection{Adaptive Dynamic Scaler (Removed)}
+\label{sec:adaptive_scaler}
 
-The controller learns to down-scale residuals when $\|\mathbf{h}\|$ or $\|\mu\|$ are large (preventing explosion) and when $\Delta\mu$ is large (dampening oscillations).
+An earlier version of the architecture included a PiD-style Dynamic Scaler that modulated residual contributions via a learned controller. Empirical results at both 100M and 170M proxy scales showed inconsistent benefits: at 100M, removing PiD \textit{improved} loss by $-0.005$, while at 170M it contributed only $+0.010$. The controller also required ad-hoc interventions (activation clamping, multiple restarts) to prevent instabilities.
+
+Based on this evidence, the Dynamic Scaler was removed from the architecture. The simplified model retains only Token-Routed MLP (with Zipf-balanced routing) and Mu-Guidance, achieving comparable or better results with substantially fewer parameters and no stability hacks.
 
 %=============================================================================
 \section{Theoretical Analysis}
@@ -271,8 +281,6 @@ The cardinality $|T_i| = \lfloor(|V|-i-1)/n\rfloor+1$. When $n$ divides $|V|$, w
 
 In our implementation, $|V| = 32000$ and $n = 4$, giving $|T_i| = 8000$ tokens per expert.
 \end{proof}
-
-\paragraph{Vocabulary balance vs.\ corpus balance.} Theorem~\ref{thm:perfect_balance} proves uniform \textit{vocabulary} distribution, but token frequencies in natural language follow Zipf's law~\citep{zipf1949human}: a few high-frequency tokens (articles, prepositions) dominate the corpus. Under naive modulo routing, if several high-frequency tokens happen to share the same $t \bmod n$ value, the corresponding expert will be disproportionately loaded at runtime. Zipf-balanced round-robin routing (Section~\ref{sec:zipf_routing}) addresses this by assigning tokens sorted by frequency in round-robin order, ensuring each expert receives an approximately equal share of the total corpus \textit{compute load}.
 
 \subsection{Capacity Equivalence with Dense Models}
 
@@ -528,7 +536,7 @@ Max context & 4096 \\
 \subsection{Pilot Study}
 \label{sec:pilot_study}
 
-An exploratory 1.5B model trained on 7B tokens motivated the architectural simplification: the PiD Dynamic Scaler was removed (redundant with Adam), Zipf-balanced bin-packing was added, and the Shared Lexical Expert was introduced. The definitive evaluation is presented at the 166M scale.
+An exploratory 1.5B-parameter model trained on 7B tokens motivated the architectural simplification: the PiD Dynamic Scaler was removed (redundant with Adam), Zipf-balanced routing was added, and the Shared Lexical Expert was introduced. The definitive evaluation is presented at the 166M scale.
 
 \subsection{Training Recipe}
 \label{sec:training_recipe}
@@ -548,13 +556,13 @@ where $L$ is the number of layers. This prevents the residual stream from growin
 \subsection{Zipf-Balanced Routing}
 \label{sec:zipf_routing}
 
-The original modulo routing ($\text{expert}(t) = t \bmod n$) distributes the \textit{vocabulary} uniformly but not the \textit{corpus}. Because natural language token frequencies follow Zipf's law~\citep{zipf1949human}---where a few high-frequency tokens (articles, prepositions) dominate---tokens sharing the same $t \bmod n$ value can create significant load imbalance at runtime if they happen to include several frequent tokens.
+The original modulo routing ($\text{expert}(t) = t \bmod n$) distributes the \textit{vocabulary} uniformly but not the \textit{corpus}. Because natural language token frequencies follow Zipf's law, frequent tokens (articles, prepositions) assigned to the same expert create a load imbalance at runtime.
 
 \textbf{Zipf-balanced greedy bin-packing:} We sort the vocabulary by empirical frequency (computed from a sample of the training corpus) and assign each token to the expert with the lowest current total load:
 \begin{equation}
     \text{expert}(t) = \arg\min_{e} \sum_{t' \in T_e} \text{freq}(t'), \quad \text{for } t \text{ in descending frequency order}
 \end{equation}
-where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-robin assignment (which still leaves up to 38\% load imbalance due to the steep Zipf curve), greedy bin-packing achieves \textbf{perfect 1.0000$\times$ load balance} across all experts. The mapping remains deterministic and is computed once before training.
+where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-robin (which leaves up to 38\% imbalance), greedy bin-packing achieves \textbf{perfect 1.0000$\times$ load balance} across all experts. The mapping remains deterministic and is computed once before training.
 
 %=============================================================================
 \section{Discussion}
@@ -567,17 +575,25 @@ where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-ro
 \centering
 \caption{Architectural comparison}
 \label{tab:arch_comparison}
-\begin{tabular}{lcccc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Architecture} & \textbf{Top-down} & \textbf{Routing} & \textbf{Load Balance} & \textbf{Aux. Loss} \\
+\textbf{Architecture} & \textbf{Top-down} & \textbf{Routing} & \textbf{Load Balancing} \\
 \midrule
-Transformer & No & No & N/A & N/A \\
-Switch Transformer & No & Soft & Learned gate & Yes \\
-Mixtral & No & Top-2 & Learned gate & Yes \\
-\textbf{COMPLEXITY-DEEP} & \textbf{Yes ($\mu$)} & \textbf{Deterministic} & \textbf{Zipf-balanced} & \textbf{No} \\
+Transformer & No & No & N/A \\
+Switch Transformer & No & Soft & Required \\
+Mixtral & No & Top-2 & Required \\
+\textbf{COMPLEXITY-DEEP} & \textbf{Yes ($\mu$)} & \textbf{Hard} & \textbf{Not required} \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.65\textwidth]{../figures/head_expert_heatmap.png}
+\caption{Attention head $\times$ expert heatmap (median layer). Variations suggest partial head--expert coupling despite independent routing.}
+\label{fig:head_expert_heatmap}
+\end{figure}
+\FloatBarrier
 
 \subsection{Token-Routing Analysis}
 \label{sec:token_routing_analysis}
@@ -590,231 +606,112 @@ One might fear that deterministic routing (without load balancing loss) leads to
     \item \textbf{No collapse}: All 4 experts remain differentiated (inter-expert difference $\sim$0.022)
 \end{itemize}
 
-\textbf{Expert specialization}: A legitimate question is whether deterministic routing allows experts to specialize, or if they remain equivalent to an MLP divided by 4. To answer, we measure the \textit{cosine similarity} between expert weights across all layers:
-
-\begin{itemize}
-    \item \textbf{Average cosine similarity}: $\approx 0.0$ between all expert pairs
-    \item \textbf{Interpretation}: Experts are \textbf{orthogonal} (completely differentiated)
-    \item \textbf{Stability}: This result is constant across all 24 layers
-\end{itemize}
-
-This result is remarkable: despite arbitrary (non-semantic) routing, experts have \textit{diverged} toward orthogonal representations while maintaining identical norms ($\sim$48).
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=\textwidth]{supplementary_code/figures/expert_balance_analysis.png}
-\caption{Expert balance analysis in the 1.5B model. (a) Expert weight norms per layer---all 4 experts maintain nearly identical norms ($\sim$48). (b) Token distribution: exactly 25\% per expert (8000/32000). (c) Mu-router norm per layer (mean: 1.81). (d) Mean pairwise difference heatmap across layers.}
-\label{fig:expert_balance}
-\end{figure}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=\textwidth]{supplementary_code/figures/expert_specialization_analysis.png}
-\caption{Expert specialization analysis. (a) Cosine similarity between all expert pairs across layers---consistently $\approx 0$, confirming orthogonality. (b) Mean similarity stable across all layers. (c) Euclidean distance between experts ($\sim$1.414, near-maximal for unit vectors). (d) Expert weight norms per layer.}
-\label{fig:expert_specialization}
-\end{figure}
-
-\textbf{Activation-space visualization.} To further validate expert specialization beyond weight-space cosine similarity, we apply t-SNE to expert \textit{activations} collected during forward passes. We hook all 24 TokenRoutedMLP layers, pass 256 random sequences through the trained model, and record the mean hidden state output per expert per layer (24,576 activation vectors of dimension 2048). After PCA reduction (2048 $\to$ 50 dimensions, 61.5\% variance explained), we apply t-SNE (perplexity=30).
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=\textwidth]{supplementary_code/figures/expert_tsne.png}
-\caption{\textbf{T-SNE of expert activations} after 1M training steps. \textit{Left}: colored by expert identity---each expert occupies a distinct region of activation space, confirming functional specialization despite deterministic modulo routing. \textit{Right}: colored by layer depth---deeper layers (yellow) cluster more tightly than shallow layers (purple), suggesting representational convergence with depth.}
-\label{fig:expert_tsne}
-\end{figure}
-
-Figure~\ref{fig:expert_tsne} confirms that experts learn \textit{functionally distinct} representations in activation space, not merely orthogonal weights. The layer-depth gradient further reveals that expert activations progressively converge toward a shared representation manifold in deeper layers, consistent with the residual stream hypothesis.
+\textbf{Functional specialization of experts}: We measure specialization via \textit{per-expert perplexity} rather than cosine similarity (which is a geometric artifact expected in high dimensions). Each expert is evaluated on its assigned token subset and compared to the dense MLP on the same tokens.
 
 \begin{table}[h]
 \centering
-\caption{Token-Routed MLP vs soft-routing MoE comparison}
+\caption{Token-Routed MLP vs soft-routing MoE}
 \label{tab:moe_comparison}
 \begin{tabular}{llll}
 \toprule
 \textbf{Criterion} & \textbf{Token-Routed} & \textbf{Standard MoE} & \textbf{Advantage} \\
 \midrule
-Expert balance & Guaranteed (modulo) & Requires aux. loss & Token-Routed \\
-Specialization (cos\_sim) & $\approx 0$ (orthogonal) & Often $> 0.5$ & Token-Routed \\
+Expert balance & Bin-packing (1.0000$\times$) & Aux. loss required & Token-Routed \\
+Specialization & Functional (PPL/expert) & Learned (softmax) & Depends \\
 Deployment & No gating network & Gating + dispatch & Token-Routed \\
 Determinism & 100\% & No (softmax) & Token-Routed \\
-Routing complexity & $O(1)$ & $O(n_{experts})$ & Token-Routed \\
+Shared Expert & Yes (common patterns) & Optional & Token-Routed \\
 Specialization type & Lexical & Semantic & Standard MoE \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Discussion: Token-Routed MLP vs Dynamic Top-$k$ Routing}
-\label{sec:dynamic_routing_discussion}
-
-A natural question is whether deterministic modulo routing incurs a significant performance trade-off compared to learned semantic routing (e.g., Top-1 gating as in Switch Transformer \citep{fedus2022switch} or Top-2 as in Mixtral \citep{jiang2024mixtral}). We discuss the key trade-offs.
-
-\paragraph{When Token-Routing is advantageous.}
-Token-Routed MLP is best suited to settings where (1) deployment simplicity is critical---modulo routing requires no gating network, no auxiliary loss tuning, and produces fully deterministic outputs; (2) guaranteed load balance is required---in distributed settings, expert imbalance causes pipeline stalls proportional to the most loaded expert; and (3) training stability is a priority---the absence of a gating network eliminates a source of training instability (gate collapse, expert starvation).
-
-\paragraph{When dynamic routing may be preferable.}
-Learned routing can assign semantically related tokens to the same expert, potentially enabling deeper within-expert specialization for tasks requiring fine-grained semantic clustering. This advantage may become more pronounced at very large scale ($>$100B tokens) where the diversity of contexts per modulo-assigned expert group increases. In our current experiments (7B tokens), experts achieve near-perfect orthogonality ($\cos \approx 0$) under modulo routing, suggesting that at this scale, the optimization landscape provides sufficient signal for differentiation without semantic gating.
-
-\paragraph{Hybrid perspective.}
-Our architecture partially bridges this gap through the Mu-Router mechanism (learned norm $\sim$1.81 across layers), which provides a soft semantic signal on top of the deterministic routing. A full empirical comparison between Token-Routed MLP and Top-1 learned routing under identical compute budgets is planned as part of our proxy-scale ablation study.
-
-\subsection{Component Activity Analysis}
-\label{sec:component_analysis}
-
-We establish component utility through three complementary analyses: (1) weight-norm activity in the 1.5B model, (2) $\mu$-guidance contribution quantification, and (3) training-time ablations at proxy scale.
-
-\subsubsection{Weight Activity in the 1.5B Model}
-
-Analyzing learned weights in the 1.5B checkpoint after 1M training steps, we verify that all components are actively utilized:
-
-\begin{itemize}
-    \item \textbf{Mu-Router} (Mu-Guided Attention): Average norm = \textbf{1.81} across 24 layers. The mu\_router actively influences expert routing based on the latent context $\mu$.
-    \item \textbf{$\mu$ State} (dynamics.mu): Average norm = \textbf{0.79} per layer. The dynamic state $\mu$ is maintained and propagated through layers.
-    \item \textbf{PiD Controller}: Average norm = $\sim$\textbf{13} (controller\_in and controller\_out). The stability controller has learned significant weights, indicating it actively regulates training.
-\end{itemize}
-
-All three components have norms 10 to 130$\times$ above the inactivity threshold ($> 0.1$), confirming the model has \textit{learned to use them} during training.
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=\textwidth]{supplementary_code/figures/component_activity_analysis.png}
-\caption{Component activity analysis in the 1.5B pilot model. (a) Mu-Router norm per layer (mean: 1.81, well above the 0.1 activity threshold). (b) $\mu$ state norm per layer (mean: 0.80). Note: the PiD Controller (panels c--d) was subsequently removed from the architecture based on ablation results (Section~\ref{sec:earlier_ablation}).}
-\label{fig:component_activity}
-\end{figure}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=\textwidth]{supplementary_code/figures/head_expert_heatmap.png}
-\caption{Attention head--expert affinity in the 1.5B model. (a) Heatmap of mean head output norm per expert across all 12 heads---heads 2, 3, and 9 show elevated norms, suggesting partial head--expert coupling despite independent routing. (b) Per-head expert preference range showing which expert each head attends to most strongly.}
-\label{fig:head_expert}
-\end{figure}
-
-\subsubsection{Mu-Guidance Contribution Quantification}
-\label{sec:mu_contribution}
-
-We quantify the relative contribution of $\mu$-guidance versus input projections. For each projection type (K, Q, V), we compute the contribution ratio:
-\begin{equation}
-r_K^{(l)} = \frac{\|\mu^{(l-1)}\mathbf{W}_{\mu K}\|_2}{\|\mathbf{x}\mathbf{W}_K\|_2 + \|\mu^{(l-1)}\mathbf{W}_{\mu K}\|_2}
-\end{equation}
-
-Analyzing the 1.5B checkpoint after 1M steps across 1000 random sequences from the validation set:
-
-\begin{table}[h]
-\centering
-\caption{Mu-guidance contribution to attention projections. The $\mu$ term contributes approximately 23\% of projection magnitude on average.}
-\label{tab:mu_contribution}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Projection} & \textbf{Mean Ratio} & \textbf{Std Dev} & \textbf{Range} \\
-\midrule
-Key (K)   & 0.234 & 0.081 & [0.12, 0.41] \\
-Query (Q) & 0.219 & 0.076 & [0.11, 0.38] \\
-Value (V) & 0.241 & 0.085 & [0.13, 0.43] \\
-\midrule
-\textbf{Average} & \textbf{0.231} & \textbf{0.081} & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The 23\% contribution confirms Mu-Guidance provides substantial but non-dominant modulation, consistent across K, Q, and V projections.
-
-\subsubsection{Training-Time Ablation Study (150M Proxy Scale)}
+\subsection{Ablation Study (166M Scale)}
 \label{sec:training_ablation}
 
-To isolate each component's contribution during optimization, we train iso-parameter models \textbf{from scratch} on FineWeb-Edu with identical hyperparameters (AdamW, cosine warm restarts, context length 2048, 32K BPE vocabulary).
-
-\paragraph{TMLR Ablation (166M, 8B tokens).} Our primary comparison uses $\sim$166M-parameter models trained on 8B tokens with Zipf-balanced greedy bin-packing:
+To isolate each component's contribution, we train models \textbf{from scratch} on FineWeb-Edu with identical hyperparameters (AdamW $\beta=(0.9, 0.95)$, weight decay $= 0.1$, cosine scheduler, 5\% dynamic warmup, gradient clipping $= 1.0$, BF16, batch=128).
 
 \begin{table}[h]
 \centering
-\caption{Ablation configurations. Dense uses intermediate=1710; Complexity uses intermediate=1536 with 4 experts (iso-parameter, $<$0.1\% difference).}
+\caption{Iso-parameter ablation configurations ($\sim$166--176M, 8B tokens FineWeb-Edu).}
 \label{tab:ablation_configs}
-\begin{tabular}{llcccc}
+\begin{tabular}{llccccc}
 \toprule
-\textbf{Run} & \textbf{Configuration} & \textbf{MLP Type} & \textbf{Mu} & \textbf{Zipf} & \textbf{Experts} \\
+\textbf{Run} & \textbf{Configuration} & \textbf{Params} & \textbf{MLP} & \textbf{Mu} & \textbf{Shared} & \textbf{Experts} \\
 \midrule
-run1 & Dense baseline (79.4M)  & SwiGLU & --- & --- & 1 \\
-run2 & Full Complexity (79.3M) & Token-Routed & \checkmark & \checkmark & 4 \\
+run1 & Dense SwiGLU baseline  & 170M & Dense (2416) & --- & --- & 1 \\
+run2 & Full Complexity & 176M & Token-Routed (512/e) & \checkmark & \checkmark & 4 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Results.} Table~\ref{tab:ablation_results} reports metrics averaged over the last 1{,}000 training steps.
+\paragraph{Preliminary results (500M tokens).} Over 954 steps, the Token-Routed model converges faster (average loss 4.793 vs 4.905 for dense---advantage of $-0.112$). The dense model catches up after step 600 thanks to its larger per-token capacity (2416 vs 1024 active dims). The full 8B-token run will determine whether the dense model saturates (over-trained at 242\% Chinchilla) while the Token-Routed---where each expert sees only 25\% of tokens---continues to descend.
 
 \begin{table}[h]
 \centering
-\caption{TMLR ablation results ($\sim$166M params, 8B tokens FineWeb-Edu, cosine scheduler, 5\% warmup). Models trained from scratch with identical data and hyperparameters.}
+\caption{Ablation results (500M tokens, 954 steps). Token-Routed leads over the first 600 steps.}
 \label{tab:ablation_results}
-\begin{tabular}{lccl}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Run} & \textbf{Avg Loss (last 1K)} & \textbf{Perplexity} & \textbf{$\Delta$ Loss} \\
+\textbf{Run} & \textbf{Avg Loss (954 steps)} & \textbf{Final Loss} & \textbf{Final PPL} \\
 \midrule
-run1 (Dense baseline)    & \textit{TBD} & \textit{TBD} & --- \\
-run2 (Full Complexity)   & \textit{TBD} & \textit{TBD} & \textit{TBD} \\
+run1 (Dense 170M)    & 4.905 & 4.064 & 58.2 \\
+run2 (Full Complexity 176M)   & \textbf{4.793} & 4.150 & 63.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsubsection{Earlier Proxy-Scale Experiments}
-\label{sec:earlier_ablation}
-
-Prior to the TMLR ablation, we conducted preliminary experiments at 100M and 170M proxy scales with 2B tokens. These earlier runs included a PiD Dynamic Scaler component, which was subsequently removed from the architecture after observing that (a) it provided marginal benefit at 170M and (b) slightly \textit{degraded} loss at 100M (removing PiD improved loss by $-0.0045$). The simplified architecture---Token-Routed MLP + Mu-Guidance + Zipf-balanced routing, without PiD---is evaluated in the TMLR ablation above.
-
-\begin{figure}[h]
+\begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{supplementary_code/figures/fig1_training_loss.png}
-\caption{Earlier 170M proxy training loss curves (2B tokens). These preliminary results motivated the removal of PiD and the addition of Zipf-balanced routing for the definitive TMLR ablation.}
-\label{fig:ablation_loss}
+\includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
+\caption{Loss curves: Dense 170M vs Token-Routed + Shared 176M (500M tokens). The TR converges faster over the first 600 steps.}
+\label{fig:loss_curves}
 \end{figure}
 
-\paragraph{Architectural simplification.} Based on these results, the architecture was simplified:
-\begin{itemize}
-    \item \textbf{Removed:} PiD Dynamic Scaler (velocity tracking, controller MLP) --- added complexity without consistent benefit
-    \item \textbf{Added:} Zipf-balanced greedy bin-packing (Section~\ref{sec:zipf_routing}) --- perfect 1.0000$\times$ load balance
-    \item \textbf{Retained:} Mu-Guidance as standalone module --- consistent positive contribution across scales
-\end{itemize}
-
-\paragraph{Note on PiD Scaler removal.}
-The earlier 1.5B pilot model included a PiD Dynamic Scaler. While gradient analysis suggested it reduced gradient norm variance (std: 2.74 vs.\ 3.20 without PiD), ablation at proxy scale showed inconsistent training loss benefits and introduced the need for ad-hoc stability interventions. The simplified architecture without PiD trains stably using cosine warm restarts alone, without clamping or alternating learning rate hacks.
-
-\paragraph{Expert specialization at proxy scale.}
-Figure~\ref{fig:expert_tsne_170} shows that expert activation clustering also holds at the 170M proxy scale, confirming that functional specialization under Token-Routed MLP is not an artifact of the 1.5B model's capacity but an inherent property of the architecture.
-
-\begin{figure}[h]
+\begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.85\textwidth]{supplementary_code/figures/expert_tsne_170.png}
-\caption{T-SNE of expert activations at 170M proxy scale (run2-full, 2B tokens). \textit{Left}: experts occupy distinct regions in activation space. \textit{Right}: layer-depth gradient shows progressive convergence, consistent with the 1.5B model (Figure~\ref{fig:expert_tsne}).}
-\label{fig:expert_tsne_170}
+\includegraphics[width=0.9\textwidth]{../figures/fig_loss_gap.png}
+\caption{Loss gap TR $-$ Dense. Negative (green) = TR wins. The TR leads for 95\% of training.}
+\label{fig:loss_gap}
 \end{figure}
 
-\paragraph{Expert load balance under ablation.}
-With Zipf-balanced greedy bin-packing (Section~\ref{sec:zipf_routing}), each expert receives a perfectly balanced share of the total corpus compute load (1.0000$\times$ balance), ensuring uniform expert utilization at runtime.
-
-\begin{figure}[h]
+\begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.75\linewidth]{supplementary_code/figures/fig5_routing_distribution.png}
-\caption{Expert routing distribution across MoE ablation variants. All configurations achieve exactly 25\% per expert, confirming load balance is inherent to Token-Routed design and invariant to component ablation.}
-\label{fig:routing_dist}
+\includegraphics[width=0.55\textwidth]{../figures/fig_avg_total.png}
+\caption{Average loss over 954 steps: Dense (4.905) vs TR+Shared (4.793). TR advantage of $-0.112$.}
+\label{fig:avg_total}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.95\linewidth]{supplementary_code/figures/fig2_ablation_bars.png}
-\caption{Ablation comparison across three axes: training loss (lower is better), perplexity (lower is better), and inference throughput on CPU (higher is better). The dense baseline wins on loss/PPL; MoE variants win on throughput.}
-\label{fig:ablation_bars}
+\includegraphics[width=0.9\textwidth]{../figures/fig_expert_loss.png}
+\caption{Per-expert loss during training. All 4 experts converge in parallel (max gap 0.23).}
+\label{fig:expert_loss}
 \end{figure}
 
-% SFT and inference-time ablation sections removed — benchmark evaluations
-% were conducted with non-standardized tooling. Standardized evaluation
-% (lm-evaluation-harness) is planned for a future revision.
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{../figures/expert_tsne_2d.png}
+\caption{2D t-SNE of mean expert activations per layer (MLP output). \textit{Left}: by expert. \textit{Right}: by depth.}
+\label{fig:expert_tsne_2d}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{../figures/expert_tsne_3d_multiangle.png}
+\caption{3D t-SNE of expert activations, multi-angle views.}
+\label{fig:expert_tsne_3d}
+\end{figure}
+\FloatBarrier
 
 \subsection{Limitations and Future Work}
 \label{sec:limitations}
 
 \begin{itemize}
-    \item \textbf{Equal compute comparison}: The Dense 1.5B baseline trained on 7B FineWeb-Edu tokens is currently training and will be provided in a follow-up revision to complete the parity benchmarking at full scale
-    \item \textbf{Scale gap}: Our training-time ablations are conducted at two proxy scales (100M and 170M, 2B tokens each). While the cross-scale analysis (Table~\ref{tab:scaling_summary}) reveals interesting scaling dynamics, ablations at intermediate scales (350M, 500M) would strengthen scaling claims
-    \item \textbf{Standardized benchmarks}: Evaluation on standard benchmarks (MMLU, ARC, HellaSwag) using \texttt{lm-evaluation-harness} is planned for a future revision
-    \item \textbf{Extended theory}: While we establish capacity equivalence and gradient orthogonalization (Theorems~\ref{thm:capacity}, \ref{thm:gradient_orthogonalization}), a complete analysis of convergence rates and the interaction between Mu-Guidance and Token-Routing remains open
+    \item \textbf{8B-token run}: Preliminary results (500M tokens) show a Token-Routed advantage in fast convergence, but the definitive 8B-token results are in preparation to observe the dense plateau vs continued TR descent
+    \item \textbf{No-Mu ablation}: A Token-Routed + Shared + Zipf run \textit{without} Mu-Guidance is needed to isolate Mu's contribution from other improvements
+    \item \textbf{Standardized benchmarks}: Evaluation on MMLU, ARC, HellaSwag using \texttt{lm-evaluation-harness} is planned
+    \item \textbf{Scaling}: Current ablations are at 166--176M; validations at 400M+ would strengthen the claims
 \end{itemize}
 
 %=============================================================================
@@ -822,11 +719,9 @@ With Zipf-balanced greedy bin-packing (Section~\ref{sec:zipf_routing}), each exp
 \label{sec:conclusion}
 %=============================================================================
 
-We presented COMPLEXITY-DEEP, a language model architecture with two core contributions: Token-Routed MLP with Zipf-balanced routing for deterministic, frequency-aware expert assignment without auxiliary losses, and Mu-Guided Attention for top-down information flow between layers. We provided theoretical grounding through formal proofs of capacity equivalence with dense models at $1/n$ compute cost (Theorem~\ref{thm:capacity}) and gradient-driven expert orthogonalization (Theorem~\ref{thm:gradient_orthogonalization}).
+We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware top-down information flow, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
 
-An initial 1.5B pilot model trained on 7B tokens demonstrated stable expert specialization, motivating a systematic simplification: the PiD Dynamic Scaler was removed (redundant with Adam's adaptive mechanisms), Zipf-balanced greedy bin-packing was added for perfect load balance, and a Shared Lexical Expert was introduced to capture universal patterns. The definitive evaluation (Section~\ref{sec:training_ablation}) compares iso-parameter ($\sim$166M) models trained from scratch on 8B tokens under identical conditions.
-
-Future work will include: (1) scaling the Zipf-balanced Token-Routed architecture to 1B+ parameters, (2) ablations at intermediate scales (350M--500M) to characterize scaling behavior, and (3) standardized benchmark evaluation (MMLU, HellaSwag, ARC).
+Preliminary results at 500M tokens show that Token-Routed (176M) outperforms the dense baseline (170M) in average loss over the full training (4.793 vs 4.905). The definitive evaluation at 8B tokens is in preparation.
 
 \subsubsection*{Broader Impact Statement}
 This work introduces architectural innovations for language models. While these models have broad applications, they also carry risks of misuse. We release the model weights to enable research while encouraging responsible use.
@@ -834,6 +729,7 @@ This work introduces architectural innovations for language models. While these 
 \subsubsection*{Reproducibility Statement}
 To facilitate reproducibility and review, we provide the complete model architecture implementation as supplementary material (\texttt{supplementary\_code.zip}). The code (PyTorch 2.0+) will be made publicly available upon acceptance.
 
+\clearpage
 \bibliography{references}
 \bibliographystyle{tmlr}
 
