@@ -25,5 +25,6 @@
 .DS_Store
 Thumbs.db
 
-#complexity_deep
-supplementary_*
+# Python cache
+__pycache__/
+*.pyc
