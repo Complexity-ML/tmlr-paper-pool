@@ -672,6 +672,8 @@ Run 3 : TR + Shared + Zipf (sans Mu)      & 176M & 4,916 & $+0,011$ \\
 
 Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense ($-0,112$ en perte moyenne). Sans Mu-Guidance (Run 3), le Token-Routed est l\'{e}g\`{e}rement plus lent que le dense ($+0,011$), confirmant que le signal d'\'{e}quilibre inter-couche est le composant cl\'{e} de l'architecture.
 
+\paragraph{Performance d'inf\'{e}rence.} Le mod\`{e}le Run 2 (176M) d\'{e}ploy\'{e} sur vLLM avec PagedAttention et CUDA graphs atteint un d\'{e}bit moyen de \textbf{204 tokens/s} sur un contexte de sortie de 2\,040 tokens (GPU NVIDIA RTX 5060 Ti, 16 Go). Le routage d\'{e}terministe par token (sans routeur appris) est nativement compatible avec la capture CUDA graph, \'{e}liminant les synchronisations CPU--GPU n\'{e}cessaires dans les architectures MoE classiques.
+
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}

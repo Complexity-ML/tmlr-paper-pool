@@ -672,6 +672,8 @@ Run 3: TR + Shared + Zipf (no Mu)        & 176M & 4.916 & $+0.011$ \\
 
 The full model (Run 2) converges significantly faster than the dense baseline ($-0.112$ in average loss). Without Mu-Guidance (Run 3), the Token-Routed model is slightly slower than dense ($+0.011$), confirming that the inter-layer equilibrium signal is the key architectural component.
 
+\paragraph{Inference performance.} The Run 2 model (176M) deployed on vLLM with PagedAttention and CUDA graphs achieves an average throughput of \textbf{204 tokens/s} over a 2,040-token output context (NVIDIA RTX 5060 Ti GPU, 16 GB). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures.
+
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
