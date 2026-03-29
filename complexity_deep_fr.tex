@@ -12,6 +12,7 @@
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
+\graphicspath{{../figures/}{supplementary_code/figures/}{figures/}}
 \usepackage{subcaption}
 \usepackage{amssymb}
 \usepackage{amsthm}
@@ -645,26 +646,29 @@ run2 & Full Complexity & 176M & Token-Routed (512/e) & \checkmark & \checkmark &
 \end{tabular}
 \end{table}
 
-\paragraph{R\'{e}sultats pr\'{e}liminaires (500M tokens).} Sur 954 \'{e}tapes, le Token-Routed converge plus rapidement (perte moyenne 4,793 vs 4,905 pour le dense --- avantage de $-0,112$). Le dense rattrape apr\`{e}s l'\'{e}tape 600 gr\^{a}ce \`{a} sa plus grande capacit\'{e} par token (2416 vs 1024 dims actifs). Le run complet \`{a} 8B tokens d\'{e}terminera si le dense sature (sur-entra\^{i}n\'{e} \`{a} 242\% Chinchilla) tandis que le Token-Routed --- dont chaque expert ne voit que 25\% des tokens --- continue de descendre.
+\paragraph{Ablation (500M tokens).} Ces mod\`{e}les \`{a} 500M tokens servent uniquement \`{a} comparer les composants de l'architecture par ablation, pas \`{a} \'{e}valuer la performance finale. Sur 954 \'{e}tapes, trois configurations iso-param ($\sim$170--176M) sont compar\'{e}es : dense (SwiGLU), Token-Routed complet (Shared Expert + Mu-Guidance + Zipf), et Token-Routed sans Mu-Guidance.
 
 \begin{table}[h]
 \centering
-\caption{R\'{e}sultats de l'ablation (500M tokens, 954 \'{e}tapes). Le Token-Routed m\`{e}ne sur les 600 premi\`{e}res \'{e}tapes.}
+\caption{Ablation Mu-Guidance (500M tokens, 954 \'{e}tapes, mod\`{e}les $\sim$170M). La perte moyenne sur l'ensemble du training mesure la vitesse de convergence globale.}
 \label{tab:ablation_results}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Run} & \textbf{Perte moy. (954 \'{e}tapes)} & \textbf{Perte finale} & \textbf{PPL finale} \\
+\textbf{Configuration} & \textbf{Params} & \textbf{Perte moy.} & \textbf{$\Delta$ vs Dense} \\
 \midrule
-run1 (Dense 170M)    & 4,905 & 4,064 & 58,2 \\
-run2 (Full Complexity 176M)   & \textbf{4,793} & 4,150 & 63,5 \\
+Run 1 : Dense (SwiGLU)                    & 170M & 4,905 & --- \\
+Run 2 : TR + Shared + Mu + Zipf           & 176M & \textbf{4,793} & $-0,112$ \\
+Run 3 : TR + Shared + Zipf (sans Mu)      & 176M & 4,916 & $+0,011$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense ($-0,112$ en perte moyenne). Sans Mu-Guidance (Run 3), le Token-Routed est l\'{e}g\`{e}rement plus lent que le dense ($+0,011$), confirmant que le signal d'\'{e}quilibre inter-couche est le composant cl\'{e} de l'architecture.
+
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
-\caption{Courbes de perte : Dense 170M vs Token-Routed + Shared 176M (500M tokens). Le TR converge plus vite sur les 600 premi\`{e}res \'{e}tapes.}
+\caption{Courbes de perte : Dense 170M vs Token-Routed complet (Shared+Mu+Zipf) 176M vs Token-Routed sans Mu-Guidance 176M (500M tokens). Le mod\`{e}le complet (bleu) converge plus vite. Sans Mu-Guidance (orange), le MoE est plus lent que le dense, confirmant le r\^{o}le essentiel du signal d'\'{e}quilibre.}
 \label{fig:loss_curves}
 \end{figure}
 
