@@ -99,7 +99,14 @@ COMPLEXITY-DEEP est une architecture de type d\'{e}codeur uniquement compos\'{e}
     \item Connexions r\'{e}siduelles avec pr\'{e}-normalisation (RMSNorm)
 \end{enumerate}
 
-La dimension cach\'{e}e est $d_{model}$, avec $n_h$ t\^{e}tes d'attention et $n_{kv}$ t\^{e}tes cl\'{e}/valeur (GQA).
+La dimension cach\'{e}e est $d_{model}$, avec $n_h$ t\^{e}tes d'attention et $n_{kv}$ t\^{e}tes cl\'{e}/valeur (GQA). La Figure~\ref{fig:architecture} pr\'{e}sente l'architecture compl\`{e}te.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.65\textwidth]{architecture_complexity_deep.png}
+\caption{Architecture COMPLEXITY-DEEP (176M param\`{e}tres). Chaque couche d\'{e}codeur comprend : (1) une attention GQA avec biais Mu-Guid\'{e} sur Q/K/V, (2) un MLP Token-Routed \`{a} 4 experts SwiGLU avec routage Zipf d\'{e}terministe et un expert partag\'{e}, (3) un module Mu-Guidance qui produit un signal d'\'{e}quilibre propag\'{e} \`{a} la couche suivante.}
+\label{fig:architecture}
+\end{figure}
 
 \subsection{Token-Routed MLP}
 \label{sec:token_routed_mlp}

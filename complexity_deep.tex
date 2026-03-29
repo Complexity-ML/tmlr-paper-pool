@@ -99,7 +99,14 @@ COMPLEXITY-DEEP is a decoder-only architecture composed of $L$ identical layers.
     \item Residual connections with pre-normalization (RMSNorm)
 \end{enumerate}
 
-The hidden dimension is $d_{model}$, with $n_h$ attention heads and $n_{kv}$ key/value heads (GQA).
+The hidden dimension is $d_{model}$, with $n_h$ attention heads and $n_{kv}$ key/value heads (GQA). Figure~\ref{fig:architecture} presents the complete architecture.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.65\textwidth]{architecture_complexity_deep.png}
+\caption{COMPLEXITY-DEEP architecture (176M parameters). Each decoder layer comprises: (1) GQA attention with Mu-Guided Q/K/V bias, (2) a Token-Routed MLP with 4 SwiGLU experts using deterministic Zipf routing and a shared expert, (3) a Mu-Guidance module that produces an equilibrium signal propagated to the next layer.}
+\label{fig:architecture}
+\end{figure}
 
 \subsection{Token-Routed MLP}
 \label{sec:token_routed_mlp}
