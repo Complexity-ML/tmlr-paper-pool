@@ -104,7 +104,7 @@ La dimension cach\'{e}e est $d_{model}$, avec $n_h$ t\^{e}tes d'attention et $n_
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.65\textwidth]{architecture_complexity_deep.png}
-\caption{Architecture COMPLEXITY-DEEP (176M param\`{e}tres). Chaque couche d\'{e}codeur comprend : (1) une attention GQA avec biais Mu-Guid\'{e} sur Q/K/V, (2) un MLP Token-Routed \`{a} 4 experts SwiGLU avec routage Zipf d\'{e}terministe et un expert partag\'{e}, (3) un module Mu-Guidance qui produit un signal d'\'{e}quilibre propag\'{e} \`{a} la couche suivante.}
+\caption{Architecture COMPLEXITY-DEEP (187M param\`{e}tres). Chaque couche d\'{e}codeur comprend : (1) une attention GQA avec biais Mu-Guid\'{e} sur Q/K/V, (2) un MLP Token-Routed \`{a} 4 experts SwiGLU avec routage Zipf d\'{e}terministe et un expert partag\'{e}, (3) un module Mu-Guidance qui produit un signal d'\'{e}quilibre propag\'{e} \`{a} la couche suivante.}
 \label{fig:architecture}
 \end{figure}
 
@@ -262,7 +262,7 @@ Le calcul de $\mu$ est d\'{e}plac\'{e} \textit{apr\`{e}s} le dispatch expert (au
 \subsection{Dynamic Scaler adaptatif (Retir\'{e})}
 \label{sec:adaptive_scaler}
 
-Une version ant\'{e}rieure de l'architecture incluait un Dynamic Scaler de style PiD qui modulait les contributions r\'{e}siduelles via un contr\^{o}leur appris. Les r\'{e}sultats empiriques aux \'{e}chelles proxy 100M et 170M ont montr\'{e} des b\'{e}n\'{e}fices inconsistants : \`{a} 100M, retirer le PiD \textit{am\'{e}liorait} la perte de $-0,005$, tandis qu'\`{a} 170M il ne contribuait que $+0,010$. Le contr\^{o}leur n\'{e}cessitait \'{e}galement des interventions ad-hoc (clampage d'activations, red\'{e}marrages multiples) pour pr\'{e}venir les instabilit\'{e}s.
+Une version ant\'{e}rieure de l'architecture incluait un Dynamic Scaler de style PiD qui modulait les contributions r\'{e}siduelles via un contr\^{o}leur appris. Les r\'{e}sultats empiriques aux \'{e}chelles proxy 100M et 171M ont montr\'{e} des b\'{e}n\'{e}fices inconsistants : \`{a} 100M, retirer le PiD \textit{am\'{e}liorait} la perte de $-0,005$, tandis qu'\`{a} 171M il ne contribuait que $+0,010$. Le contr\^{o}leur n\'{e}cessitait \'{e}galement des interventions ad-hoc (clampage d'activations, red\'{e}marrages multiples) pour pr\'{e}venir les instabilit\'{e}s.
 
 Sur la base de ces \'{e}vidences, le Dynamic Scaler a \'{e}t\'{e} retir\'{e} de l'architecture. Le mod\`{e}le simplifi\'{e} ne conserve que le Token-Routed MLP (avec routage Zipf-balanced) et le Mu-Guidance, obtenant des r\'{e}sultats comparables ou meilleurs avec substantiellement moins de param\`{e}tres et aucun hack de stabilit\'{e}.
 
@@ -641,43 +641,43 @@ Pour isoler la contribution de chaque composant, nous entra\^{i}nons des mod\`{e
 
 \begin{table}[h]
 \centering
-\caption{Configurations d'ablation iso-param\`{e}tres ($\sim$166--176M, 8B tokens FineWeb-Edu).}
+\caption{Configurations d'ablation iso-param\`{e}tres ($\sim$166--187M, 8B tokens FineWeb-Edu).}
 \label{tab:ablation_configs}
 \begin{tabular}{llccccc}
 \toprule
 \textbf{Run} & \textbf{Configuration} & \textbf{Params} & \textbf{MLP} & \textbf{Mu} & \textbf{Shared} & \textbf{Experts} \\
 \midrule
-run1 & Dense SwiGLU baseline  & 170M & Dense (2416) & --- & --- & 1 \\
-run2 & Full Complexity & 176M & Token-Routed (512/e) & \checkmark & \checkmark & 4 \\
+run1 & Dense SwiGLU baseline  & 171M & Dense (2416) & --- & --- & 1 \\
+run2 & Full Complexity & 187M & Token-Routed (512/e) & \checkmark & \checkmark & 4 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Ablation (500M tokens).} Ces mod\`{e}les \`{a} 500M tokens servent uniquement \`{a} comparer les composants de l'architecture par ablation, pas \`{a} \'{e}valuer la performance finale. Sur 954 \'{e}tapes, trois configurations iso-param ($\sim$170--176M) sont compar\'{e}es : dense (SwiGLU), Token-Routed complet (Shared Expert + Mu-Guidance + Zipf), et Token-Routed sans Mu-Guidance.
+\paragraph{Ablation (500M tokens).} Ces mod\`{e}les \`{a} 500M tokens servent uniquement \`{a} comparer les composants de l'architecture par ablation, pas \`{a} \'{e}valuer la performance finale. Sur 954 \'{e}tapes, trois configurations iso-param ($\sim$170--187M) sont compar\'{e}es : dense (SwiGLU), Token-Routed complet (Shared Expert + Mu-Guidance + Zipf), et Token-Routed sans Mu-Guidance.
 
 \begin{table}[h]
 \centering
-\caption{Ablation Mu-Guidance (500M tokens, 954 \'{e}tapes, mod\`{e}les $\sim$170M). La perte moyenne sur l'ensemble du training mesure la vitesse de convergence globale.}
+\caption{Ablation Mu-Guidance (500M tokens, 954 \'{e}tapes, mod\`{e}les $\sim$171M). La perte moyenne sur l'ensemble du training mesure la vitesse de convergence globale.}
 \label{tab:ablation_results}
 \begin{tabular}{lccc}
 \toprule
 \textbf{Configuration} & \textbf{Params} & \textbf{Perte moy.} & \textbf{$\Delta$ vs Dense} \\
 \midrule
-Run 1 : Dense (SwiGLU)                    & 170M & 4,905 & --- \\
-Run 2 : TR + Shared + Mu + Zipf           & 176M & \textbf{4,793} & $-0,112$ \\
-Run 3 : TR + Shared + Zipf (sans Mu)      & 176M & 4,916 & $+0,011$ \\
+Run 1 : Dense (SwiGLU)                    & 171M & 4,905 & --- \\
+Run 2 : TR + Shared + Mu + Zipf           & 187M & \textbf{4,793} & $-0,112$ \\
+Run 3 : TR + Shared + Zipf (sans Mu)      & 187M & 4,916 & $+0,011$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense ($-0,112$ en perte moyenne). Sans Mu-Guidance (Run 3), le Token-Routed est l\'{e}g\`{e}rement plus lent que le dense ($+0,011$), confirmant que le signal d'\'{e}quilibre inter-couche est le composant cl\'{e} de l'architecture.
 
-\paragraph{Performance d'inf\'{e}rence.} Le mod\`{e}le Run 2 (176M) d\'{e}ploy\'{e} sur vLLM avec PagedAttention et CUDA graphs atteint un d\'{e}bit moyen de \textbf{204 tokens/s} sur un contexte de sortie de 2\,040 tokens (GPU NVIDIA RTX 5060 Ti, 16 Go). Le routage d\'{e}terministe par token (sans routeur appris) est nativement compatible avec la capture CUDA graph, \'{e}liminant les synchronisations CPU--GPU n\'{e}cessaires dans les architectures MoE classiques.
+\paragraph{Performance d'inf\'{e}rence.} Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM avec PagedAttention et CUDA graphs atteint un d\'{e}bit moyen de \textbf{204 tokens/s} sur un contexte de sortie de 2\,040 tokens (GPU NVIDIA RTX 5060 Ti, 16 Go). Le routage d\'{e}terministe par token (sans routeur appris) est nativement compatible avec la capture CUDA graph, \'{e}liminant les synchronisations CPU--GPU n\'{e}cessaires dans les architectures MoE classiques.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
-\caption{Courbes de perte : Dense 170M vs Token-Routed complet (Shared+Mu+Zipf) 176M vs Token-Routed sans Mu-Guidance 176M (500M tokens). Le mod\`{e}le complet (bleu) converge plus vite. Sans Mu-Guidance (orange), le MoE est plus lent que le dense, confirmant le r\^{o}le essentiel du signal d'\'{e}quilibre.}
+\caption{Courbes de perte : Dense 171M vs Token-Routed complet (Shared+Mu+Zipf) 187M vs Token-Routed sans Mu-Guidance 187M (500M tokens). Le mod\`{e}le complet (bleu) converge plus vite. Sans Mu-Guidance (orange), le MoE est plus lent que le dense, confirmant le r\^{o}le essentiel du signal d'\'{e}quilibre.}
 \label{fig:loss_curves}
 \end{figure}
 
@@ -724,7 +724,7 @@ Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense 
     \item \textbf{Run 8B tokens} : les r\'{e}sultats pr\'{e}liminaires (500M tokens) montrent un avantage Token-Routed en convergence rapide, mais les r\'{e}sultats d\'{e}finitifs \`{a} 8B tokens sont en pr\'{e}paration pour observer le plateau dense vs la descente continue du TR
     \item \textbf{Ablation No-Mu} : un run Token-Routed + Shared + Zipf \textit{sans} Mu-Guidance est n\'{e}cessaire pour isoler la contribution de Mu des autres am\'{e}liorations
     \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation sur MMLU, ARC, HellaSwag avec \texttt{lm-evaluation-harness} est pr\'{e}vue
-    \item \textbf{Mise \`{a} l'\'{e}chelle} : les ablations actuelles sont \`{a} 166--176M ; des validations \`{a} 400M+ renforceraient les revendications
+    \item \textbf{Mise \`{a} l'\'{e}chelle} : les ablations actuelles sont \`{a} 166--187M ; des validations \`{a} 400M+ renforceraient les revendications
 \end{itemize}
 
 %=============================================================================
@@ -734,7 +734,7 @@ Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense 
 
 Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage avec trois contributions principales : (1) le Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton et Shared Lexical Expert pour une assignation d\'{e}terministe sans pertes auxiliaires, (2) le Mu-Guided Attention avec $\mu_{\text{init}}$ apprenable et production de $\mu$ apr\`{e}s le MLP pour un flux d'information descendant tenant compte des experts, et (3) une recette d'entra\^{i}nement avec warmup dynamique (5\%) et initialisation GPT-style ($1/\sqrt{2L}$).
 
-Les r\'{e}sultats pr\'{e}liminaires \`{a} 500M tokens montrent que le Token-Routed (176M) surpasse le dense (170M) en perte moyenne sur l'ensemble du training (4,793 vs 4,905). L'\'{e}valuation d\'{e}finitive \`{a} 8B tokens est en pr\'{e}paration.
+Les r\'{e}sultats pr\'{e}liminaires \`{a} 500M tokens montrent que le Token-Routed (187M) surpasse le dense (171M) en perte moyenne sur l'ensemble du training (4,793 vs 4,905). L'\'{e}valuation d\'{e}finitive \`{a} 8B tokens est en pr\'{e}paration.
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail introduit des innovations architecturales pour les mod\`{e}les de langage. Bien que ces mod\`{e}les aient de nombreuses applications, ils comportent \'{e}galement des risques de mauvaise utilisation. Nous publions les poids du mod\`{e}le pour permettre la recherche tout en encourageant une utilisation responsable.

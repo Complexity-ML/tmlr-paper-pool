@@ -104,7 +104,7 @@ The hidden dimension is $d_{model}$, with $n_h$ attention heads and $n_{kv}$ key
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.65\textwidth]{architecture_complexity_deep.png}
-\caption{COMPLEXITY-DEEP architecture (176M parameters). Each decoder layer comprises: (1) GQA attention with Mu-Guided Q/K/V bias, (2) a Token-Routed MLP with 4 SwiGLU experts using deterministic Zipf routing and a shared expert, (3) a Mu-Guidance module that produces an equilibrium signal propagated to the next layer.}
+\caption{COMPLEXITY-DEEP architecture (187M parameters). Each decoder layer comprises: (1) GQA attention with Mu-Guided Q/K/V bias, (2) a Token-Routed MLP with 4 SwiGLU experts using deterministic Zipf routing and a shared expert, (3) a Mu-Guidance module that produces an equilibrium signal propagated to the next layer.}
 \label{fig:architecture}
 \end{figure}
 
@@ -262,7 +262,7 @@ The computation of $\mu$ is moved \textit{after} expert dispatch (instead of bef
 \subsection{Adaptive Dynamic Scaler (Removed)}
 \label{sec:adaptive_scaler}
 
-An earlier version of the architecture included a PiD-style Dynamic Scaler that modulated residual contributions via a learned controller. Empirical results at both 100M and 170M proxy scales showed inconsistent benefits: at 100M, removing PiD \textit{improved} loss by $-0.005$, while at 170M it contributed only $+0.010$. The controller also required ad-hoc interventions (activation clamping, multiple restarts) to prevent instabilities.
+An earlier version of the architecture included a PiD-style Dynamic Scaler that modulated residual contributions via a learned controller. Empirical results at both 100M and 171M proxy scales showed inconsistent benefits: at 100M, removing PiD \textit{improved} loss by $-0.005$, while at 171M it contributed only $+0.010$. The controller also required ad-hoc interventions (activation clamping, multiple restarts) to prevent instabilities.
 
 Based on this evidence, the Dynamic Scaler was removed from the architecture. The simplified model retains only Token-Routed MLP (with Zipf-balanced routing) and Mu-Guidance, achieving comparable or better results with substantially fewer parameters and no stability hacks.
 
@@ -641,43 +641,43 @@ To isolate each component's contribution, we train models \textbf{from scratch} 
 
 \begin{table}[h]
 \centering
-\caption{Iso-parameter ablation configurations ($\sim$166--176M, 8B tokens FineWeb-Edu).}
+\caption{Iso-parameter ablation configurations ($\sim$166--187M, 8B tokens FineWeb-Edu).}
 \label{tab:ablation_configs}
 \begin{tabular}{llccccc}
 \toprule
 \textbf{Run} & \textbf{Configuration} & \textbf{Params} & \textbf{MLP} & \textbf{Mu} & \textbf{Shared} & \textbf{Experts} \\
 \midrule
-run1 & Dense SwiGLU baseline  & 170M & Dense (2416) & --- & --- & 1 \\
-run2 & Full Complexity & 176M & Token-Routed (512/e) & \checkmark & \checkmark & 4 \\
+run1 & Dense SwiGLU baseline  & 171M & Dense (2416) & --- & --- & 1 \\
+run2 & Full Complexity & 187M & Token-Routed (512/e) & \checkmark & \checkmark & 4 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\paragraph{Ablation (500M tokens).} These 500M-token models serve solely to compare architectural components via ablation, not to evaluate final performance. Over 954 steps, three iso-param ($\sim$170--176M) configurations are compared: dense (SwiGLU), full Token-Routed (Shared Expert + Mu-Guidance + Zipf), and Token-Routed without Mu-Guidance.
+\paragraph{Ablation (500M tokens).} These 500M-token models serve solely to compare architectural components via ablation, not to evaluate final performance. Over 954 steps, three iso-param ($\sim$170--187M) configurations are compared: dense (SwiGLU), full Token-Routed (Shared Expert + Mu-Guidance + Zipf), and Token-Routed without Mu-Guidance.
 
 \begin{table}[h]
 \centering
-\caption{Mu-Guidance ablation (500M tokens, 954 steps, $\sim$170M models). Average loss over the full training measures overall convergence speed.}
+\caption{Mu-Guidance ablation (500M tokens, 954 steps, $\sim$171M models). Average loss over the full training measures overall convergence speed.}
 \label{tab:ablation_results}
 \begin{tabular}{lccc}
 \toprule
 \textbf{Configuration} & \textbf{Params} & \textbf{Avg Loss} & \textbf{$\Delta$ vs Dense} \\
 \midrule
-Run 1: Dense (SwiGLU)                    & 170M & 4.905 & --- \\
-Run 2: TR + Shared + Mu + Zipf           & 176M & \textbf{4.793} & $-0.112$ \\
-Run 3: TR + Shared + Zipf (no Mu)        & 176M & 4.916 & $+0.011$ \\
+Run 1: Dense (SwiGLU)                    & 171M & 4.905 & --- \\
+Run 2: TR + Shared + Mu + Zipf           & 187M & \textbf{4.793} & $-0.112$ \\
+Run 3: TR + Shared + Zipf (no Mu)        & 187M & 4.916 & $+0.011$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The full model (Run 2) converges significantly faster than the dense baseline ($-0.112$ in average loss). Without Mu-Guidance (Run 3), the Token-Routed model is slightly slower than dense ($+0.011$), confirming that the inter-layer equilibrium signal is the key architectural component.
 
-\paragraph{Inference performance.} The Run 2 model (176M) deployed on vLLM with PagedAttention and CUDA graphs achieves an average throughput of \textbf{204 tokens/s} over a 2,040-token output context (NVIDIA RTX 5060 Ti GPU, 16 GB). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures.
+\paragraph{Inference performance.} The Run 2 model (187M) deployed on vLLM with PagedAttention and CUDA graphs achieves an average throughput of \textbf{204 tokens/s} over a 2,040-token output context (NVIDIA RTX 5060 Ti GPU, 16 GB). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
-\caption{Loss curves: Dense 170M vs full Token-Routed (Shared+Mu+Zipf) 176M vs Token-Routed without Mu-Guidance 176M (500M tokens). The full model (blue) converges faster throughout. Without Mu-Guidance (orange), the MoE is slower than the dense baseline, confirming the essential role of the equilibrium signal.}
+\caption{Loss curves: Dense 171M vs full Token-Routed (Shared+Mu+Zipf) 187M vs Token-Routed without Mu-Guidance 187M (500M tokens). The full model (blue) converges faster throughout. Without Mu-Guidance (orange), the MoE is slower than the dense baseline, confirming the essential role of the equilibrium signal.}
 \label{fig:loss_curves}
 \end{figure}
 
@@ -724,7 +724,7 @@ The full model (Run 2) converges significantly faster than the dense baseline ($
     \item \textbf{8B-token run}: Preliminary results (500M tokens) show a Token-Routed advantage in fast convergence, but the definitive 8B-token results are in preparation to observe the dense plateau vs continued TR descent
     \item \textbf{No-Mu ablation}: A Token-Routed + Shared + Zipf run \textit{without} Mu-Guidance is needed to isolate Mu's contribution from other improvements
     \item \textbf{Standardized benchmarks}: Evaluation on MMLU, ARC, HellaSwag using \texttt{lm-evaluation-harness} is planned
-    \item \textbf{Scaling}: Current ablations are at 166--176M; validations at 400M+ would strengthen the claims
+    \item \textbf{Scaling}: Current ablations are at 166--187M; validations at 400M+ would strengthen the claims
 \end{itemize}
 
 %=============================================================================
@@ -734,7 +734,7 @@ The full model (Run 2) converges significantly faster than the dense baseline ($
 
 We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware top-down information flow, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
 
-Preliminary results at 500M tokens show that Token-Routed (176M) outperforms the dense baseline (170M) in average loss over the full training (4.793 vs 4.905). The definitive evaluation at 8B tokens is in preparation.
+Preliminary results at 500M tokens show that Token-Routed (187M) outperforms the dense baseline (171M) in average loss over the full training (4.793 vs 4.905). The definitive evaluation at 8B tokens is in preparation.
 
 \subsubsection*{Broader Impact Statement}
 This work introduces architectural innovations for language models. While these models have broad applications, they also carry risks of misuse. We release the model weights to enable research while encouraging responsible use.
