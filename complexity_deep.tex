@@ -56,7 +56,7 @@ We present COMPLEXITY-DEEP, a language model architecture introducing three orig
 Large Language Models (LLMs) have revolutionized natural language processing in recent years \citep{vaswani2017attention, brown2020language}. However, dominant architectures present several limitations:
 
 \begin{itemize}
-    \item \textbf{Unidirectional information flow}: In standard Transformers, information flows only bottom-up, without top-down guidance from higher layers.
+    \item \textbf{No inter-layer communication}: In standard Transformers, each layer processes independently without receiving guidance from the previous layer's computation.
     \item \textbf{Computational cost of MoE}: Mixture of Experts architectures \citep{shazeer2017outrageously, fedus2022switch} require complex load balancing and routing mechanisms.
     \item \textbf{Training instability}: Large models often suffer from numerical instabilities requiring careful hyperparameter tuning.
 \end{itemize}
@@ -65,7 +65,7 @@ We propose COMPLEXITY-DEEP, an architecture that addresses the first two limitat
 
 \begin{enumerate}
     \item \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}: A deterministic per-token routing that distributes tokens to experts by perfectly balancing the load via a greedy algorithm, eliminating both the learned router and auxiliary load-balancing losses.
-    \item \textbf{Mu-Guided Attention}: A mechanism where the latent state $\mu$ from the previous layer influences K, Q, and V projections, creating a top-down information flow across layers.
+    \item \textbf{Mu-Guided Attention}: A mechanism where the latent state $\mu$ computed at layer $l$ (after the MLP) flows forward to layer $l+1$, influencing its K, Q, and V projections. This creates an inter-layer communication channel that carries expert-specific context from one layer to the next.
 \end{enumerate}
 
 %=============================================================================
@@ -172,7 +172,7 @@ Since modulo routing ensures disjoint token sets ($T_i \cap T_j = \emptyset$), a
 \subsection{Mu-Guided Attention}
 \label{sec:mu_guidance}
 
-The central innovation of COMPLEXITY-DEEP is the introduction of a latent state $\mu$ that creates a top-down information flow. At each layer $l$, the state $\mu^{(l-1)}$ from the previous layer influences attention projections:
+The central innovation of COMPLEXITY-DEEP is the introduction of a latent state $\mu$ that creates an inter-layer communication channel. At each layer $l$, the state $\mu^{(l-1)}$ computed by the \emph{previous} layer (after its MLP) flows forward to influence attention projections:
 \begin{align}
 \mathbf{K} &= \mathbf{x}\mathbf{W}_K + \mu^{(l-1)}\mathbf{W}_{\mu K} \label{eq:key}\\
 \mathbf{Q} &= \mathbf{x}\mathbf{W}_Q + \mu^{(l-1)}\mathbf{W}_{\mu Q} \label{eq:query}\\
@@ -180,7 +180,7 @@ The central innovation of COMPLEXITY-DEEP is the introduction of a latent state 
 \end{align}
 where $\mathbf{W}_{\mu K}, \mathbf{W}_{\mu Q}, \mathbf{W}_{\mu V}$ are learned linear projections.
 
-\paragraph{Learnable $\mu_{\text{init}}$ for layer 0.} In a standard Transformer, layer 0 receives no top-down information. We introduce a learnable parameter $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialized to zero) that serves as $\mu^{(-1)}$ for the first layer:
+\paragraph{Learnable $\mu_{\text{init}}$ for layer 0.} In a standard Transformer, layer 0 receives no inter-layer context. We introduce a learnable parameter $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialized to zero) that serves as $\mu^{(-1)}$ for the first layer:
 \begin{equation}
 \mu^{(-1)} = \mu_{\text{init}} \quad \text{(learnable, shared across all positions)}
 \end{equation}
@@ -315,6 +315,8 @@ The function class representable by Token-Routed MLP over the vocabulary is:
 \end{equation}
 where each $f_i$ is a SwiGLU MLP. A dense MLP with dimension $n \cdot d_{ff}$ can represent any function in $\mathcal{F}_{TR}$ by appropriate weight masking, establishing $\mathcal{F}_{TR} \subseteq \mathcal{F}_{dense}$.
 
+Conversely, $\mathcal{F}_{dense} \subseteq \mathcal{F}_{TR}$: any dense MLP $f_{dense}$ with intermediate dimension $n \cdot d_{ff}$ can be exactly reproduced by setting all $n$ expert weight matrices to the same value $\mathbf{W}^{(i)} = \mathbf{W}_{dense}[:, id_{ff}:(i+1)d_{ff}]$ for the gate/up projections. Since each token activates exactly one expert, and the experts collectively cover the full $n \cdot d_{ff}$ space via the union over the vocabulary, $\mathcal{F}_{TR} = \mathcal{F}_{dense}$.
+
 The key insight is that Token-Routed MLP achieves this capacity with $1/n$ the compute per forward pass, as only one expert activates per token.
 \end{proof}
 
@@ -342,7 +344,7 @@ The gradient update for expert $i$ at step $t$ is:
 \mathbf{W}^{(i)}_{t+1} = \mathbf{W}^{(i)}_t - \eta \sum_{t \in T_i} \nabla_{\mathbf{W}^{(i)}} \mathcal{L}(t)
 \end{equation}
 
-Since $T_i \cap T_j = \emptyset$ by construction, the gradients $\nabla_{\mathbf{W}^{(i)}} \mathcal{L}$ and $\nabla_{\mathbf{W}^{(j)}} \mathcal{L}$ are computed on disjoint token subsets. Under the assumption that different tokens induce uncorrelated gradient directions (reasonable for natural language), the expected inner product of gradient updates is:
+Since $T_i \cap T_j = \emptyset$ by construction, the gradients $\nabla_{\mathbf{W}^{(i)}} \mathcal{L}$ and $\nabla_{\mathbf{W}^{(j)}} \mathcal{L}$ are computed on disjoint token subsets. In high-dimensional spaces, random vectors are approximately orthogonal with high probability \citep{vershynin2018high}. Since disjoint token subsets produce gradient updates that are independent random vectors in $\mathbb{R}^{d_{model} \times d_{ff}}$, the expected inner product of gradient updates is:
 \begin{equation}
 \mathbb{E}[\langle \nabla_{\mathbf{W}^{(i)}}, \nabla_{\mathbf{W}^{(j)}} \rangle] = 0
 \end{equation}
@@ -367,10 +369,10 @@ r^{(l)} = f(U^{(l)}r^{(l-1)} + W^{(l)}\epsilon^{(l+1)})
 where $r^{(l)}$ is the representation at layer $l$, $U^{(l)}$ is a feedforward weight, and $W^{(l)}\epsilon^{(l+1)}$ is the top-down prediction error from layer $l + 1$.
 \end{proposition}
 
-The $\mu$ state in COMPLEXITY-DEEP serves as a compressed summary of higher-layer processing that modulates attention computation. Unlike standard Transformers where information flows strictly bottom-up, our architecture enables bidirectional information flow within each forward pass.
+The $\mu$ state in COMPLEXITY-DEEP serves as a compressed summary of the previous layer's processing (including which expert processed each token) that modulates the next layer's attention computation. The information flows forward through the network: layer $l$ computes $\mu^{(l)}$ after its MLP, which then influences layer $l+1$'s attention. This is \emph{not} top-down feedback from higher to lower layers; rather, it is an enriched forward communication channel that carries expert-aware context alongside the standard residual stream.
 
 \begin{remark}[Biological Plausibility]
-The $\mu$-guidance mechanism shares structural similarities with top-down attention modulation in the visual cortex, where higher visual areas (e.g., V4, IT) send feedback signals that modulate processing in lower areas (V1, V2) \citep{gilbert2013top}.
+The $\mu$-guidance mechanism shares structural similarities with lateral modulation in neural circuits, where contextual signals from one processing stage influence the next stage's computation \citep{gilbert2013top}.
 \end{remark}
 
 \subsection{Mu-Guidance Convergence}
@@ -732,7 +734,7 @@ The full model (Run 2) converges significantly faster than the dense baseline ($
 \label{sec:conclusion}
 %=============================================================================
 
-We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware top-down information flow, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
+We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware inter-layer communication, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
 
 Preliminary results at 500M tokens show that Token-Routed (187M) outperforms the dense baseline (171M) in average loss over the full training (4.793 vs 4.905). The definitive evaluation at 8B tokens is in preparation.
 
