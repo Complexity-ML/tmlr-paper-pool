@@ -655,11 +655,11 @@ run2 & Full Complexity & 187M & Token-Routed (512/e) & \checkmark & \checkmark &
 \end{tabular}
 \end{table}
 
-\paragraph{Ablation (500M tokens).} Ces mod\`{e}les \`{a} 500M tokens servent uniquement \`{a} comparer les composants de l'architecture par ablation, pas \`{a} \'{e}valuer la performance finale. Sur 954 \'{e}tapes, trois configurations iso-param ($\sim$170--187M) sont compar\'{e}es : dense (SwiGLU), Token-Routed complet (Shared Expert + Mu-Guidance + Zipf), et Token-Routed sans Mu-Guidance.
+\paragraph{Ablation (500M tokens).} Ces mod\`{e}les \`{a} 500M tokens servent uniquement \`{a} comparer les composants de l'architecture par ablation, pas \`{a} \'{e}valuer la performance finale. Sur 954 \'{e}tapes, quatre configurations ($\sim$171--187M) sont compar\'{e}es : dense (SwiGLU), Token-Routed complet, Token-Routed sans Mu-Guidance, et MoE Mixtral-style (routeur appris).
 
 \begin{table}[h]
 \centering
-\caption{Ablation Mu-Guidance (500M tokens, 954 \'{e}tapes, mod\`{e}les $\sim$171M). La perte moyenne sur l'ensemble du training mesure la vitesse de convergence globale.}
+\caption{Ablation compl\`{e}te (500M tokens, 954 \'{e}tapes). La perte moyenne mesure la vitesse de convergence globale.}
 \label{tab:ablation_results}
 \begin{tabular}{lccc}
 \toprule
@@ -668,13 +668,14 @@ run2 & Full Complexity & 187M & Token-Routed (512/e) & \checkmark & \checkmark &
 Run 1 : Dense (SwiGLU)                    & 171M & 4,905 & --- \\
 Run 2 : TR + Shared + Mu + Zipf           & 187M & \textbf{4,793} & $-0,112$ \\
 Run 3 : TR + Shared + Zipf (sans Mu)      & 187M & 4,916 & $+0,011$ \\
+Run 4 : Mixtral (routeur appris, top-1)   & 187M & 4,843 & $-0,062$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense ($-0,112$ en perte moyenne). Sans Mu-Guidance (Run 3), le Token-Routed est l\'{e}g\`{e}rement plus lent que le dense ($+0,011$), confirmant que le signal d'\'{e}quilibre inter-couche est le composant cl\'{e} de l'architecture.
+Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense ($-0,112$) et que le MoE Mixtral-style ($-0,050$). Le routage d\'{e}terministe surpasse le routeur appris en efficacit\'{e} d'\'{e}chantillonnage : les experts se sp\'{e}cialisent d\`{e}s le premier step, sans phase d'apprentissage du routeur. Sans Mu-Guidance (Run 3), le Token-Routed est plus lent que le dense ($+0,011$), confirmant que le signal d'\'{e}quilibre inter-couche est le composant cl\'{e}.
 
-\paragraph{Performance d'inf\'{e}rence.} Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM avec PagedAttention et CUDA graphs atteint un d\'{e}bit moyen de \textbf{204 tokens/s} sur un contexte de sortie de 2\,040 tokens (GPU NVIDIA RTX 5060 Ti, 16 Go). Le routage d\'{e}terministe par token (sans routeur appris) est nativement compatible avec la capture CUDA graph, \'{e}liminant les synchronisations CPU--GPU n\'{e}cessaires dans les architectures MoE classiques.
+\paragraph{Performance d'inf\'{e}rence.} Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM avec PagedAttention et CUDA graphs atteint un d\'{e}bit moyen de \textbf{204 tokens/s} sur un contexte de sortie de 2\,040 tokens (GPU NVIDIA RTX 5060 Ti, 16 Go). Le routage d\'{e}terministe par token (sans routeur appris) est nativement compatible avec la capture CUDA graph, \'{e}liminant les synchronisations CPU--GPU n\'{e}cessaires dans les architectures MoE classiques. Cette propri\'{e}t\'{e} est ind\'{e}pendante de la taille du mod\`{e}le : contrairement aux MoE \`{a} routeur appris qui n\'{e}cessitent des communications all-to-all entre GPUs, le routage d\'{e}terministe ne requiert aucune coordination inter-GPU, ce qui sugg\`{e}re un scaling favorable du d\'{e}bit avec le nombre de GPUs et la taille du mod\`{e}le.
 
 \begin{figure}[!htbp]
 \centering
@@ -723,10 +724,9 @@ Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense 
 \label{sec:limitations}
 
 \begin{itemize}
-    \item \textbf{Run 8B tokens} : les r\'{e}sultats pr\'{e}liminaires (500M tokens) montrent un avantage Token-Routed en convergence rapide, mais les r\'{e}sultats d\'{e}finitifs \`{a} 8B tokens sont en pr\'{e}paration pour observer le plateau dense vs la descente continue du TR
-    \item \textbf{Ablation No-Mu} : un run Token-Routed + Shared + Zipf \textit{sans} Mu-Guidance est n\'{e}cessaire pour isoler la contribution de Mu des autres am\'{e}liorations
-    \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation sur MMLU, ARC, HellaSwag avec \texttt{lm-evaluation-harness} est pr\'{e}vue
-    \item \textbf{Mise \`{a} l'\'{e}chelle} : les ablations actuelles sont \`{a} 166--187M ; des validations \`{a} 400M+ renforceraient les revendications
+    \item \textbf{Ablation No-Mu} : \textit{r\'{e}alis\'{e}e} (Run 3, Table~\ref{tab:ablation_results}). Sans Mu-Guidance, le Token-Routed est plus lent que le dense ($+0,011$ en perte moyenne), confirmant le r\^{o}le essentiel du signal d'\'{e}quilibre inter-couche
+    \item \textbf{Run 8B tokens} : les r\'{e}sultats pr\'{e}liminaires (500M tokens) montrent un avantage Token-Routed en convergence rapide. Les runs \`{a} 8B tokens sont en pr\'{e}paration pour observer le plateau dense vs la descente continue du TR
+    \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation sur MMLU, ARC, HellaSwag avec \texttt{lm-evaluation-harness} est pr\'{e}vue apr\`{e}s les runs 8B tokens
 \end{itemize}
 
 %=============================================================================

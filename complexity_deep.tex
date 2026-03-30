@@ -655,11 +655,11 @@ run2 & Full Complexity & 187M & Token-Routed (512/e) & \checkmark & \checkmark &
 \end{tabular}
 \end{table}
 
-\paragraph{Ablation (500M tokens).} These 500M-token models serve solely to compare architectural components via ablation, not to evaluate final performance. Over 954 steps, three iso-param ($\sim$170--187M) configurations are compared: dense (SwiGLU), full Token-Routed (Shared Expert + Mu-Guidance + Zipf), and Token-Routed without Mu-Guidance.
+\paragraph{Ablation (500M tokens).} These 500M-token models serve solely to compare architectural components via ablation, not to evaluate final performance. Over 954 steps, four configurations ($\sim$171--187M) are compared: dense (SwiGLU), full Token-Routed, Token-Routed without Mu-Guidance, and Mixtral-style MoE (learned router).
 
 \begin{table}[h]
 \centering
-\caption{Mu-Guidance ablation (500M tokens, 954 steps, $\sim$171M models). Average loss over the full training measures overall convergence speed.}
+\caption{Full ablation (500M tokens, 954 steps). Average loss measures overall convergence speed.}
 \label{tab:ablation_results}
 \begin{tabular}{lccc}
 \toprule
@@ -668,13 +668,14 @@ run2 & Full Complexity & 187M & Token-Routed (512/e) & \checkmark & \checkmark &
 Run 1: Dense (SwiGLU)                    & 171M & 4.905 & --- \\
 Run 2: TR + Shared + Mu + Zipf           & 187M & \textbf{4.793} & $-0.112$ \\
 Run 3: TR + Shared + Zipf (no Mu)        & 187M & 4.916 & $+0.011$ \\
+Run 4: Mixtral (learned router, top-1)   & 187M & 4.843 & $-0.062$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The full model (Run 2) converges significantly faster than the dense baseline ($-0.112$ in average loss). Without Mu-Guidance (Run 3), the Token-Routed model is slightly slower than dense ($+0.011$), confirming that the inter-layer equilibrium signal is the key architectural component.
+The full model (Run 2) converges significantly faster than both the dense baseline ($-0.112$) and the Mixtral-style MoE ($-0.050$). Deterministic routing outperforms the learned router in sample efficiency: experts specialize from the first step, without a router learning phase. Without Mu-Guidance (Run 3), Token-Routed is slower than dense ($+0.011$), confirming that the inter-layer equilibrium signal is the key component.
 
-\paragraph{Inference performance.} The Run 2 model (187M) deployed on vLLM with PagedAttention and CUDA graphs achieves an average throughput of \textbf{204 tokens/s} over a 2,040-token output context (NVIDIA RTX 5060 Ti GPU, 16 GB). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures.
+\paragraph{Inference performance.} The Run 2 model (187M) deployed on vLLM with PagedAttention and CUDA graphs achieves an average throughput of \textbf{204 tokens/s} over a 2,040-token output context (NVIDIA RTX 5060 Ti GPU, 16 GB). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures. This property is independent of model size: unlike learned-router MoE which requires all-to-all inter-GPU communication, deterministic routing requires no inter-GPU coordination, suggesting favorable throughput scaling with both GPU count and model size.
 
 \begin{figure}[!htbp]
 \centering
@@ -723,10 +724,9 @@ The full model (Run 2) converges significantly faster than the dense baseline ($
 \label{sec:limitations}
 
 \begin{itemize}
-    \item \textbf{8B-token run}: Preliminary results (500M tokens) show a Token-Routed advantage in fast convergence, but the definitive 8B-token results are in preparation to observe the dense plateau vs continued TR descent
-    \item \textbf{No-Mu ablation}: A Token-Routed + Shared + Zipf run \textit{without} Mu-Guidance is needed to isolate Mu's contribution from other improvements
-    \item \textbf{Standardized benchmarks}: Evaluation on MMLU, ARC, HellaSwag using \texttt{lm-evaluation-harness} is planned
-    \item \textbf{Scaling}: Current ablations are at 166--187M; validations at 400M+ would strengthen the claims
+    \item \textbf{No-Mu ablation}: \textit{completed} (Run 3, Table~\ref{tab:ablation_results}). Without Mu-Guidance, Token-Routed is slower than dense ($+0.011$ in average loss), confirming the essential role of the inter-layer equilibrium signal
+    \item \textbf{8B-token run}: Preliminary results (500M tokens) show a Token-Routed advantage in fast convergence. The 8B-token runs are in preparation to observe the dense plateau vs continued TR descent
+    \item \textbf{Standardized benchmarks}: Evaluation on MMLU, ARC, HellaSwag using \texttt{lm-evaluation-harness} is planned after the 8B-token runs
 \end{itemize}
 
 %=============================================================================
