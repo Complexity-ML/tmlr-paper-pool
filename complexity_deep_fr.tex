@@ -56,7 +56,7 @@ Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage i
 Les grands mod\`{e}les de langage (LLM) ont r\'{e}volutionn\'{e} le traitement du langage naturel ces derni\`{e}res ann\'{e}es \citep{vaswani2017attention, brown2020language}. Cependant, les architectures dominantes pr\'{e}sentent plusieurs limitations :
 
 \begin{itemize}
-    \item \textbf{Flux d'information unidirectionnel} : dans les Transformers standards, l'information ne circule que de bas en haut, sans guidage descendant depuis les couches sup\'{e}rieures.
+    \item \textbf{Absence de communication inter-couche} : dans les Transformers standards, chaque couche traite ind\'{e}pendamment sans recevoir de signal de la couche pr\'{e}c\'{e}dente.
     \item \textbf{Co\^{u}t computationnel des MoE} : les architectures Mixture of Experts \citep{shazeer2017outrageously, fedus2022switch} n\'{e}cessitent des m\'{e}canismes complexes d'\'{e}quilibrage de charge et de routage.
     \item \textbf{Instabilit\'{e} de l'entra\^{i}nement} : les grands mod\`{e}les souffrent souvent d'instabilit\'{e}s num\'{e}riques n\'{e}cessitant un r\'{e}glage minutieux des hyperparaml\`{e}tres.
 \end{itemize}
@@ -65,7 +65,7 @@ Nous proposons COMPLEXITY-DEEP, une architecture qui r\'{e}pond aux deux premi\`
 
 \begin{enumerate}
     \item \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton} : un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge via un algorithme glouton, \'{e}liminant le routeur appris et les pertes auxiliaires d'\'{e}quilibrage.
-    \item \textbf{Mu-Guided Attention} : un m\'{e}canisme o\`{u} l'\'{e}tat latent $\mu$ de la couche pr\'{e}c\'{e}dente influence les projections K, Q et V, cr\'{e}ant un flux d'information descendant entre les couches.
+    \item \textbf{Mu-Guided Attention} : un m\'{e}canisme o\`{u} l'\'{e}tat latent $\mu$ calcul\'{e} \`{a} la couche $l$ (apr\`{e}s le MLP) est transmis \`{a} la couche $l+1$ pour influencer ses projections K, Q et V. Cela cr\'{e}e un canal de communication inter-couche portant le contexte sp\'{e}cifique aux experts.
 \end{enumerate}
 
 %=============================================================================
@@ -172,7 +172,7 @@ Puisque le routage modulo assure des ensembles de tokens disjoints ($T_i \cap T_
 \subsection{Mu-Guided Attention}
 \label{sec:mu_guidance}
 
-L'innovation centrale de COMPLEXITY-DEEP est l'introduction d'un \'{e}tat latent $\mu$ qui cr\'{e}e un flux d'information descendant. \`{A} chaque couche $l$, l'\'{e}tat $\mu^{(l-1)}$ de la couche pr\'{e}c\'{e}dente influence les projections d'attention :
+L'innovation centrale de COMPLEXITY-DEEP est l'introduction d'un \'{e}tat latent $\mu$ qui cr\'{e}e un canal de communication inter-couche. \`{A} chaque couche $l$, l'\'{e}tat $\mu^{(l-1)}$ calcul\'{e} par la couche \emph{pr\'{e}c\'{e}dente} (apr\`{e}s son MLP) est transmis pour influencer les projections d'attention :
 \begin{align}
 \mathbf{K} &= \mathbf{x}\mathbf{W}_K + \mu^{(l-1)}\mathbf{W}_{\mu K} \label{eq:key}\\
 \mathbf{Q} &= \mathbf{x}\mathbf{W}_Q + \mu^{(l-1)}\mathbf{W}_{\mu Q} \label{eq:query}\\
@@ -180,7 +180,7 @@ L'innovation centrale de COMPLEXITY-DEEP est l'introduction d'un \'{e}tat latent
 \end{align}
 o\`{u} $\mathbf{W}_{\mu K}, \mathbf{W}_{\mu Q}, \mathbf{W}_{\mu V}$ sont des projections lin\'{e}aires appris.
 
-\paragraph{$\mu_{\text{init}}$ apprenable pour la couche 0.} Dans un Transformer standard, la couche 0 ne re\c{c}oit aucune information descendante. Nous introduisons un param\`{e}tre apprenable $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialis\'{e} \`{a} z\'{e}ro) qui sert de $\mu^{(-1)}$ pour la premi\`{e}re couche :
+\paragraph{$\mu_{\text{init}}$ apprenable pour la couche 0.} Dans un Transformer standard, la couche 0 ne re\c{c}oit aucun contexte inter-couche. Nous introduisons un param\`{e}tre apprenable $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialis\'{e} \`{a} z\'{e}ro) qui sert de $\mu^{(-1)}$ pour la premi\`{e}re couche :
 \begin{equation}
 \mu^{(-1)} = \mu_{\text{init}} \quad \text{(apprenable, partag\'{e} par toutes les positions)}
 \end{equation}
@@ -315,6 +315,8 @@ La classe de fonctions repr\'{e}sentable par le Token-Routed MLP sur le vocabula
 \end{equation}
 o\`{u} chaque $f_i$ est un MLP SwiGLU. Un MLP dense de dimension $n \cdot d_{ff}$ peut repr\'{e}senter toute fonction de $\mathcal{F}_{TR}$ par masquage ad\'{e}quat des poids, \'{e}tablissant $\mathcal{F}_{TR} \subseteq \mathcal{F}_{dense}$.
 
+R\'{e}ciproquement, $\mathcal{F}_{dense} \subseteq \mathcal{F}_{TR}$ : tout MLP dense $f_{dense}$ de dimension interm\'{e}diaire $n \cdot d_{ff}$ peut \^{e}tre exactement reproduit en fixant les matrices de poids de chaque expert \`{a} $\mathbf{W}^{(i)} = \mathbf{W}_{dense}[:, id_{ff}:(i+1)d_{ff}]$ pour les projections gate/up. Chaque token active exactement un expert, et les experts couvrent collectivement l'espace complet $n \cdot d_{ff}$ via l'union sur le vocabulaire, d'o\`{u} $\mathcal{F}_{TR} = \mathcal{F}_{dense}$.
+
 L'intuition cl\'{e} est que le Token-Routed MLP atteint cette capacit\'{e} avec $1/n$ du co\^{u}t de calcul par passe avant, puisqu'un seul expert est activ\'{e} par token.
 \end{proof}
 
@@ -342,7 +344,7 @@ La mise \`{a} jour du gradient pour l'expert $i$ \`{a} l'\'{e}tape $t$ est :
 \mathbf{W}^{(i)}_{t+1} = \mathbf{W}^{(i)}_t - \eta \sum_{t \in T_i} \nabla_{\mathbf{W}^{(i)}} \mathcal{L}(t)
 \end{equation}
 
-Puisque $T_i \cap T_j = \emptyset$ par construction, les gradients $\nabla_{\mathbf{W}^{(i)}} \mathcal{L}$ et $\nabla_{\mathbf{W}^{(j)}} \mathcal{L}$ sont calcul\'{e}s sur des sous-ensembles disjoints de tokens. Sous l'hypoth\`{e}se que diff\'{e}rents tokens induisent des directions de gradient non corr\'{e}l\'{e}es (raisonnable pour le langage naturel), le produit scalaire attendu des mises \`{a} jour de gradient est :
+Puisque $T_i \cap T_j = \emptyset$ par construction, les gradients $\nabla_{\mathbf{W}^{(i)}} \mathcal{L}$ et $\nabla_{\mathbf{W}^{(j)}} \mathcal{L}$ sont calcul\'{e}s sur des sous-ensembles disjoints de tokens. En haute dimension, des vecteurs al\'{e}atoires sont approximativement orthogonaux avec haute probabilit\'{e} \citep{vershynin2018high}. Les sous-ensembles disjoints de tokens produisent des mises \`{a} jour de gradient qui sont des vecteurs al\'{e}atoires ind\'{e}pendants dans $\mathbb{R}^{d_{model} \times d_{ff}}$, d'o\`{u} le produit scalaire attendu est :
 \begin{equation}
 \mathbb{E}[\langle \nabla_{\mathbf{W}^{(i)}}, \nabla_{\mathbf{W}^{(j)}} \rangle] = 0
 \end{equation}
@@ -354,23 +356,23 @@ Puisque $T_i \cap T_j = \emptyset$ par construction, les gradients $\nabla_{\mat
 
 Le m\'{e}canisme Mu-Guided Attention peut \^{e}tre interpr\'{e}t\'{e} \`{a} travers le prisme du codage pr\'{e}dictif \citep{rao1999predictive}, une th\'{e}orie du calcul cortical.
 
-\begin{proposition}[Modulation descendante]
-Le m\'{e}canisme de guidage $\mu$ impl\'{e}mente une forme de modulation pr\'{e}dictive o\`{u} le contexte des couches sup\'{e}rieures influence le traitement des couches inf\'{e}rieures :
+\begin{proposition}[Communication inter-couche]
+Le m\'{e}canisme de guidage $\mu$ impl\'{e}mente une forme de communication inter-couche o\`{u} le contexte de la couche $l-1$ (apr\`{e}s son MLP) influence le traitement de la couche $l$ :
 \begin{equation}
-\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{signal\ descendant}
+\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{signal\ inter\text{-}couche}
 \end{equation}
 
 Ceci est analogue \`{a} la mise \`{a} jour du codage pr\'{e}dictif :
 \begin{equation}
 r^{(l)} = f(U^{(l)}r^{(l-1)} + W^{(l)}\epsilon^{(l+1)})
 \end{equation}
-o\`{u} $r^{(l)}$ est la repr\'{e}sentation \`{a} la couche $l$, $U^{(l)}$ est un poids feedforward, et $W^{(l)}\epsilon^{(l+1)}$ est l'erreur de pr\'{e}diction descendante de la couche $l + 1$.
+o\`{u} $r^{(l)}$ est la repr\'{e}sentation \`{a} la couche $l$, $U^{(l)}$ est un poids feedforward, et $W^{(l)}\epsilon^{(l+1)}$ est le signal contextuel de la couche adjacente.
 \end{proposition}
 
-L'\'{e}tat $\mu$ dans COMPLEXITY-DEEP sert de r\'{e}sum\'{e} compress\'{e} du traitement des couches sup\'{e}rieures qui module le calcul de l'attention. Contrairement aux Transformers standards o\`{u} l'information circule strictement de bas en haut, notre architecture permet un flux d'information bidirectionnel au sein de chaque passe avant.
+L'\'{e}tat $\mu$ dans COMPLEXITY-DEEP sert de r\'{e}sum\'{e} compress\'{e} du traitement de la couche pr\'{e}c\'{e}dente (incluant quel expert a trait\'{e} chaque token) qui module le calcul de l'attention de la couche suivante. L'information circule vers l'avant : la couche $l$ calcule $\mu^{(l)}$ apr\`{e}s son MLP, qui influence ensuite la couche $l+1$. Il ne s'agit \emph{pas} de r\'{e}troaction descendante des couches sup\'{e}rieures vers les inf\'{e}rieures, mais d'un canal de communication enrichi qui transporte le contexte expert en parall\`{e}le du flux r\'{e}siduel standard.
 
 \begin{remark}[Plausibilit\'{e} biologique]
-Le m\'{e}canisme de guidage $\mu$ partage des similarit\'{e}s structurelles avec la modulation descendante de l'attention dans le cortex visuel, o\`{u} les aires visuelles sup\'{e}rieures (par ex. V4, IT) envoient des signaux de r\'{e}troaction qui modulent le traitement dans les aires inf\'{e}rieures (V1, V2) \citep{gilbert2013top}.
+Le m\'{e}canisme de guidage $\mu$ partage des similarit\'{e}s structurelles avec la modulation lat\'{e}rale dans les circuits neuronaux, o\`{u} des signaux contextuels d'une \'{e}tape de traitement influencent le calcul de l'\'{e}tape suivante \citep{gilbert2013top}.
 \end{remark}
 
 \subsection{Convergence du guidage Mu}
@@ -732,7 +734,7 @@ Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense 
 \label{sec:conclusion}
 %=============================================================================
 
-Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage avec trois contributions principales : (1) le Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton et Shared Lexical Expert pour une assignation d\'{e}terministe sans pertes auxiliaires, (2) le Mu-Guided Attention avec $\mu_{\text{init}}$ apprenable et production de $\mu$ apr\`{e}s le MLP pour un flux d'information descendant tenant compte des experts, et (3) une recette d'entra\^{i}nement avec warmup dynamique (5\%) et initialisation GPT-style ($1/\sqrt{2L}$).
+Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage avec trois contributions principales : (1) le Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton et Shared Lexical Expert pour une assignation d\'{e}terministe sans pertes auxiliaires, (2) le Mu-Guided Attention avec $\mu_{\text{init}}$ apprenable et production de $\mu$ apr\`{e}s le MLP pour une communication inter-couche tenant compte des experts, et (3) une recette d'entra\^{i}nement avec warmup dynamique (5\%) et initialisation GPT-style ($1/\sqrt{2L}$).
 
 Les r\'{e}sultats pr\'{e}liminaires \`{a} 500M tokens montrent que le Token-Routed (187M) surpasse le dense (171M) en perte moyenne sur l'ensemble du training (4,793 vs 4,905). L'\'{e}valuation d\'{e}finitive \`{a} 8B tokens est en pr\'{e}paration.
 
