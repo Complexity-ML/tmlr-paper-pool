@@ -10,10 +10,13 @@ Each TransformerBlock:
 Key innovations:
 - mu_init: a learnable parameter that gives layer 0 a mu_prev (so even the
   first layer benefits from Mu-Guidance).
-- GPT-style residual init: residual output projections (o_proj, down_proj)
-  are initialized with std = 0.02 / sqrt(2 * num_layers) to prevent the
-  residual stream from growing with depth.
-- Mu flows layer-to-layer with clamping to [-2, 2].
+- GPT-style residual init: residual output projections (o_proj, down_proj,
+  shared_down) are initialized with std = 0.02 / sqrt(2 * num_layers) to
+  prevent the residual stream from growing with depth. shared_down is
+  included because the shared expert's output projection also writes into
+  the residual stream.
+- Mu flows layer-to-layer without clamping; with mu_proj initialized to zero,
+  autoregressive feedback builds up gradually and the Lipschitz bound holds.
 
 Reference: Section 3 of the paper.
 """
@@ -63,7 +66,7 @@ class ComplexityModel(nn.Module):
         mu_prev = mu_init.expand(B, S, H)     # learnable starting mu
         for layer in layers:
             x, kv, mu = layer(x, ..., mu_prev=mu_prev)
-            mu_prev = clamp(mu, -2, 2)         # prevent feedback explosion
+            mu_prev = mu                       # free, no clamp
     """
 
     def __init__(self, config: ComplexityConfig):
@@ -195,9 +198,12 @@ class ComplexityModel(nn.Module):
                 mu_prev=mu_prev,
             )
 
-            # Propagate mu to next layer (clamped to prevent explosion)
+            # Propagate mu to next layer — free, no clamp.
+            # The autoregressive feedback is tamed by the zero-init of mu_proj:
+            # at step 0 mu_contextual ≈ mu_param ≈ 0, so the feedback builds
+            # up gradually as training progresses.
             if mu_contextual is not None:
-                mu_prev = torch.clamp(mu_contextual, -2.0, 2.0)
+                mu_prev = mu_contextual
 
             if use_cache:
                 new_kvs.append(new_kv)

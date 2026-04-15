@@ -48,14 +48,17 @@ class TokenRoutedMLP(nn.Module):
         vocab_size: int = 100_000,
         shared_expert: bool = True,
         token_frequencies: Optional[torch.Tensor] = None,
+        routed_gate_init: float = 0.1,
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_experts = num_experts
         self.vocab_size = vocab_size
 
-        # Each expert gets 1/E of the total intermediate width
+        # Routed experts keep 1/E of the total intermediate width each.
+        # The shared expert uses the full intermediate_size (dense-equivalent).
         self.expert_intermediate_size = intermediate_size // num_experts
+        self.shared_intermediate_size = intermediate_size
 
         # ----- Routed expert weights [E, H, I_e] / [E, I_e, H] -----
         # Stored as 3-D Parameters so FSDP can shard them naturally.
@@ -69,12 +72,18 @@ class TokenRoutedMLP(nn.Module):
             torch.randn(num_experts, self.expert_intermediate_size, hidden_size) * 0.02
         )
 
-        # ----- Shared Lexical Expert (dense SwiGLU, same width as one expert) -----
+        # ----- Learnable routed gate γ -----
+        # out = SharedSwiGLU(x) + γ · RoutedSwiGLU(x)
+        # With γ init = 0.1, routed experts contribute from the first step;
+        # their contribution grows via gradient descent as specialization emerges.
+        self.routed_gate = nn.Parameter(torch.full((1,), routed_gate_init))
+
+        # ----- Shared Lexical Expert (dense SwiGLU, full intermediate_size) -----
         self.use_shared_expert = shared_expert
         if shared_expert:
-            self.shared_gate = nn.Linear(hidden_size, self.expert_intermediate_size, bias=False)
-            self.shared_up = nn.Linear(hidden_size, self.expert_intermediate_size, bias=False)
-            self.shared_down = nn.Linear(self.expert_intermediate_size, hidden_size, bias=False)
+            self.shared_gate = nn.Linear(hidden_size, self.shared_intermediate_size, bias=False)
+            self.shared_up = nn.Linear(hidden_size, self.shared_intermediate_size, bias=False)
+            self.shared_down = nn.Linear(self.shared_intermediate_size, hidden_size, bias=False)
 
         # ----- Token-to-expert mapping (precomputed, non-trainable) -----
         mapping = self._build_token_mapping(vocab_size, num_experts, token_frequencies)
@@ -173,8 +182,8 @@ class TokenRoutedMLP(nn.Module):
             inter_e = F.silu(gate_e) * up_e            # [N_e, I_e]  (SwiGLU)
             routed_out[mask] = (inter_e @ self.down_proj_w[e]).to(routed_out.dtype)
 
-        # Combine: shared (common patterns) + routed (specialized patterns)
-        out = routed_out + shared_out
+        # Combine: shared (common patterns) + γ · routed (specialized patterns)
+        out = shared_out + self.routed_gate * routed_out
         return out.view(B, S, H)
 
     def _forward_all_experts(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -186,6 +195,7 @@ class TokenRoutedMLP(nn.Module):
             up_e = flat @ self.up_proj_w[e]
             out = out + (F.silu(gate_e) * up_e) @ self.down_proj_w[e]
         out = out / self.num_experts
+        out = self.routed_gate * out
         if self.use_shared_expert:
             shared = self.shared_down(
                 F.silu(self.shared_gate(flat)) * self.shared_up(flat)

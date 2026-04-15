@@ -31,22 +31,24 @@ class MuGuidance(nn.Module):
     Mu-Guidance — produces a contextual latent vector that flows between layers.
 
     Equation (Section 3.3):
-        mu_contextual = clamp(mu_param) + mu_proj(hidden_states)
+        mu_contextual = mu_param + mu_proj(hidden_states)
 
-    mu_param: learnable per-dimension base value, clamped to [mu_min, mu_max]
+    mu_param: learnable per-dimension base value (initialized to zero)
     mu_proj:  linear projection (zero-initialized so mu starts neutral)
+
+    mu is not clamped: with mu_proj.weight initialized to zero and mu_param to
+    zero, the autoregressive feedback across layers builds up gradually via
+    gradient descent. The Lipschitz bound in the paper's theory section holds
+    as it depends on ||mu_proj.weight||, not on the range of mu itself.
 
     This module is placed AFTER the MLP so that mu captures expert-specific
     information (which expert processed each token).
     """
 
-    def __init__(self, hidden_size: int, mu_min: float = 0.0, mu_max: float = 2.0):
+    def __init__(self, hidden_size: int):
         super().__init__()
-        self.mu_min = mu_min
-        self.mu_max = mu_max
-
-        # Learnable base equilibrium, initialized to midpoint of clamp range
-        self.mu = nn.Parameter(torch.full((hidden_size,), (mu_min + mu_max) / 2))
+        # Learnable base equilibrium, initialized to zero (no prior)
+        self.mu = nn.Parameter(torch.zeros(hidden_size))
 
         # Context-dependent projection (zero-init = start neutral)
         self.mu_proj = nn.Linear(hidden_size, hidden_size, bias=False)
@@ -57,9 +59,9 @@ class MuGuidance(nn.Module):
         Args:
             hidden_states: [B, S, H] — post-MLP hidden states
         Returns:
-            mu_contextual: [B, S, H]
+            mu_contextual: [B, S, H] — free (no clamp)
         """
-        return torch.clamp(self.mu, self.mu_min, self.mu_max) + self.mu_proj(hidden_states)
+        return self.mu + self.mu_proj(hidden_states)
 
 
 class TransformerBlock(nn.Module):
