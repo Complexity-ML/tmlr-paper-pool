@@ -54,10 +54,8 @@ class TokenRoutedMLP(nn.Module):
         self.num_experts = num_experts
         self.vocab_size = vocab_size
 
-        # Routed experts keep 1/E of the total intermediate width each.
-        # The shared expert uses the full intermediate_size (dense-equivalent).
+        # Each expert gets 1/E of the total intermediate width
         self.expert_intermediate_size = intermediate_size // num_experts
-        self.shared_intermediate_size = intermediate_size
 
         # ----- Routed expert weights [E, H, I_e] / [E, I_e, H] -----
         # Stored as 3-D Parameters so FSDP can shard them naturally.
@@ -71,12 +69,12 @@ class TokenRoutedMLP(nn.Module):
             torch.randn(num_experts, self.expert_intermediate_size, hidden_size) * 0.02
         )
 
-        # ----- Shared Lexical Expert (dense SwiGLU, full intermediate_size) -----
+        # ----- Shared Lexical Expert (dense SwiGLU, same width as one expert) -----
         self.use_shared_expert = shared_expert
         if shared_expert:
-            self.shared_gate = nn.Linear(hidden_size, self.shared_intermediate_size, bias=False)
-            self.shared_up = nn.Linear(hidden_size, self.shared_intermediate_size, bias=False)
-            self.shared_down = nn.Linear(self.shared_intermediate_size, hidden_size, bias=False)
+            self.shared_gate = nn.Linear(hidden_size, self.expert_intermediate_size, bias=False)
+            self.shared_up = nn.Linear(hidden_size, self.expert_intermediate_size, bias=False)
+            self.shared_down = nn.Linear(self.expert_intermediate_size, hidden_size, bias=False)
 
         # ----- Token-to-expert mapping (precomputed, non-trainable) -----
         mapping = self._build_token_mapping(vocab_size, num_experts, token_frequencies)
@@ -176,7 +174,7 @@ class TokenRoutedMLP(nn.Module):
             routed_out[mask] = (inter_e @ self.down_proj_w[e]).to(routed_out.dtype)
 
         # Combine: shared (common patterns) + routed (specialized patterns)
-        out = shared_out + routed_out
+        out = routed_out + shared_out
         return out.view(B, S, H)
 
     def _forward_all_experts(self, hidden_states: torch.Tensor) -> torch.Tensor:

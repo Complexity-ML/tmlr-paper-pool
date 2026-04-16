@@ -188,10 +188,10 @@ This allows layer 0 to also benefit from Mu-Guidance, with the gradient adjustin
 
 \paragraph{$\mu$ production after MLP.} Each layer $l$ produces its own $\mu^{(l)}_{\text{contextual}}$ \textit{after} expert dispatch, capturing expert-specific information for each token:
 \begin{equation}
-\mu^{(l)}_{\text{contextual}} = \boldsymbol{\mu}^{(l)}_{\text{param}} + \mathbf{W}_{\mu}^{(l)} \mathbf{h}^{(l)}_{\text{post-MLP}}
+\mu^{(l)}_{\text{contextual}} = \text{clamp}(\boldsymbol{\mu}^{(l)}_{\text{param}}, \mu_{\min}, \mu_{\max}) + \mathbf{W}_{\mu}^{(l)} \mathbf{h}^{(l)}_{\text{post-MLP}}
 \label{eq:mu_update}
 \end{equation}
-where $\boldsymbol{\mu}^{(l)}_{\text{param}} \in \mathbb{R}^{d}$ is a learnable parameter \textit{specific to layer $l$} (initialized to zero) and $\mathbf{W}_{\mu}^{(l)}$ is a contextual linear projection (initialized to zero). This $\mu^{(l)}_{\text{contextual}}$ becomes the $\mu^{(l-1)}$ used by layer $l+1$ in Equations~\ref{eq:key}--\ref{eq:value}. We do not clamp $\mu$: with $\mathbf{W}_{\mu}^{(l)}$ initialized to zero, the autoregressive feedback builds up gradually, and the Lipschitz bound of Section~\ref{sec:theory} still holds since it depends on $\|\mathbf{W}_{\mu}^{(l)}\|$, not on the range of $\mu$ itself.
+where $\boldsymbol{\mu}^{(l)}_{\text{param}} \in \mathbb{R}^{d}$ is a learnable parameter \textit{specific to layer $l$} (initialized to $(\mu_{\min}+\mu_{\max})/2$) and $\mathbf{W}_{\mu}^{(l)}$ is a contextual linear projection (initialized to zero). This $\mu^{(l)}_{\text{contextual}}$ becomes the $\mu^{(l-1)}$ used by layer $l+1$ in Equations~\ref{eq:key}--\ref{eq:value}.
 
 \paragraph{Full per-layer flow.} Each layer $l$ processes in order:
 \begin{enumerate}
@@ -217,7 +217,7 @@ Reducing MLP cost from $4\times$ dense to $1\times$ dense (iso-compute).
 \subsubsection{Shared Lexical Expert}
 \label{sec:shared_expert}
 
-A shared dense MLP processes \textit{all} tokens, capturing universal patterns (syntax, grammar), while routed experts specialize on their lexical subsets. The output combines both additively:
+A shared dense MLP processes \textit{all} tokens, capturing universal patterns (syntax, grammar), while routed experts specialize on their lexical subsets. The output combines both:
 \begin{equation}
 \text{MLP}_{\text{output}}(\mathbf{x}) = \underbrace{\text{SwiGLU}_{\text{shared}}(\mathbf{x})}_{\text{common patterns}} + \underbrace{\text{SwiGLU}_{e}(\mathbf{x})}_{\text{lexical specialization}}
 \end{equation}
@@ -226,9 +226,7 @@ where each component is a standard SwiGLU MLP:
 \text{SwiGLU}_{\text{shared}}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^s_{gate}) \odot \mathbf{x}\mathbf{W}^s_{up})\mathbf{W}^s_{down} \\
 \text{SwiGLU}_{e}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^e_{gate}) \odot \mathbf{x}\mathbf{W}^e_{up})\mathbf{W}^e_{down}
 \end{align}
-The shared expert has the full intermediate size $d_{ff}$, matching a dense SwiGLU; each routed expert has intermediate size $d_{ff}/n$. This sizing ensures the shared branch alone is iso-compute with a dense baseline, while the routed experts provide additional specialization capacity (adding $\sim$25\% parameters over dense). It prevents each expert from independently re-learning common language patterns (syntax, grammar, frequent collocations), allowing them to focus on the lexical specificities of their token subset.
-
-The combination is a simple residual sum: both branches write into the residual stream with equal weight. This avoids learnable gating scalars which, under mixed-precision (BF16) training, suffer from numerical underflow on their gradients and stall at initialization.
+The shared expert has the same intermediate size as one routed expert ($d_{ff}/n$), adding $\sim$6\% parameters to the total model. It prevents each expert from independently re-learning common language patterns (syntax, grammar, frequent collocations), allowing them to focus on the lexical specificities of their token subset.
 
 \subsubsection{Zipf-balanced Greedy Bin-Packing}
 
@@ -557,11 +555,11 @@ Our training recipe follows standard modern LLM practices (LLaMA, GPT-3) with tw
 
 \paragraph{Dynamic warmup.} Instead of a fixed number of warmup steps (which can represent 52\% of training for short runs), warmup is automatically set to \textbf{5\% of total steps}. This ensures a constant warmup/training ratio regardless of run duration.
 
-\paragraph{GPT-style initialization.} Residual output projections (\texttt{o\_proj}, routed \texttt{down\_proj}, and the shared expert's \texttt{shared\_down}) are initialized with reduced standard deviation:
+\paragraph{GPT-style initialization.} Residual output projections (\texttt{o\_proj}, \texttt{down\_proj}) are initialized with reduced standard deviation:
 \begin{equation}
 \sigma_{\text{residual}} = \frac{0.02}{\sqrt{2 \times L}}
 \end{equation}
-where $L$ is the number of layers. This prevents the residual stream from growing with depth~\citep{radford2019language}. We extend the scaling to \texttt{shared\_down} (missing in the reference GPT-2 recipe which has no shared branch) because it is a residual output projection in our architecture.
+where $L$ is the number of layers. This prevents the residual stream from growing with depth~\citep{radford2019language}.
 
 \paragraph{Other hyperparameters.} Weight decay = 0.1 (standard GPT-3/LLaMA), AdamW with $\beta_1 = 0.9$, $\beta_2 = 0.95$, gradient clipping $= 1.0$, BF16 precision, cosine scheduler with min\_lr = 10\% of peak.
 
@@ -677,7 +675,7 @@ Run 4: Mixtral (learned router, top-1)   & 187M & 4.843 & $-0.062$ \\
 
 The full model (Run 2) converges significantly faster than both the dense baseline ($-0.112$) and the Mixtral-style MoE ($-0.050$). Deterministic routing outperforms the learned router in sample efficiency: experts specialize from the first step, without a router learning phase. Without Mu-Guidance (Run 3), Token-Routed is slower than dense ($+0.011$), confirming that the inter-layer equilibrium signal is the key component.
 
-\paragraph{Training efficiency.} At 384M scale on 4$\times$ NVIDIA B200 (8B tokens, batch 128, BF16 FSDP), the Token-Routed model trains at \textbf{1.61\,s/step} while the iso-parameter dense baseline requires \textbf{2.52\,s/step} --- a \textbf{1.57$\times$} wall-clock speedup per step. Total training time: 3\,h\,28\,min (MoE) vs $\sim$5\,h\,20\,min (dense). The speedup comes from the MoE's lower active compute per token: the shared expert processes all tokens through $d_{ff}$ while each routed expert adds only $d_{ff}/n$, giving a total active width of $d_{ff} + d_{ff}/n$ vs $d_{ff,\text{dense}}$ for the dense baseline at equal parameter count.
+\paragraph{Training throughput.} The Token-Routed model's active compute per token is $2 \times d_{ff}/n$ (one routed expert plus shared expert) vs $d_{ff}$ for dense. With optimized Triton kernels (grouped GEMM with Tensor Cores, sort-based dispatch), this translates to a \textbf{1.57$\times$} wall-clock speedup per step at 384M scale on 4$\times$ NVIDIA B200 (1.61\,s/step vs 2.52\,s/step). Without kernel optimization the throughput is comparable (7.2\,s/step for both architectures on 2$\times$ RTX PRO 6000), as the routing overhead offsets the compute savings. The routing table lookup itself is $O(1)$ with zero GPU synchronization.
 
 \paragraph{Inference performance.} The Run 2 model (187M) deployed on vLLM with PagedAttention and CUDA graphs achieves an average throughput of \textbf{204 tokens/s} over a 2,040-token output context (NVIDIA RTX 5060 Ti GPU, 16 GB). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures. This property is independent of model size: unlike learned-router MoE which requires all-to-all inter-GPU communication, deterministic routing requires no inter-GPU coordination, suggesting favorable throughput scaling with both GPU count and model size.
 
