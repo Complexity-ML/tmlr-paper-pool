@@ -217,9 +217,9 @@ Reducing MLP cost from $4\times$ dense to $1\times$ dense (iso-compute).
 \subsubsection{Shared Lexical Expert}
 \label{sec:shared_expert}
 
-A shared dense MLP processes \textit{all} tokens, capturing universal patterns (syntax, grammar), while routed experts specialize on their lexical subsets. The output combines both through a learnable gate $\gamma \in \mathbb{R}$:
+A shared dense MLP processes \textit{all} tokens, capturing universal patterns (syntax, grammar), while routed experts specialize on their lexical subsets. The output combines both additively:
 \begin{equation}
-\text{MLP}_{\text{output}}(\mathbf{x}) = \underbrace{\text{SwiGLU}_{\text{shared}}(\mathbf{x})}_{\text{common patterns}} + \gamma \cdot \underbrace{\text{SwiGLU}_{e}(\mathbf{x})}_{\text{lexical specialization}}
+\text{MLP}_{\text{output}}(\mathbf{x}) = \underbrace{\text{SwiGLU}_{\text{shared}}(\mathbf{x})}_{\text{common patterns}} + \underbrace{\text{SwiGLU}_{e}(\mathbf{x})}_{\text{lexical specialization}}
 \end{equation}
 where each component is a standard SwiGLU MLP:
 \begin{align}
@@ -228,7 +228,7 @@ where each component is a standard SwiGLU MLP:
 \end{align}
 The shared expert has the full intermediate size $d_{ff}$, matching a dense SwiGLU; each routed expert has intermediate size $d_{ff}/n$. This sizing ensures the shared branch alone is iso-compute with a dense baseline, while the routed experts provide additional specialization capacity (adding $\sim$25\% parameters over dense). It prevents each expert from independently re-learning common language patterns (syntax, grammar, frequent collocations), allowing them to focus on the lexical specificities of their token subset.
 
-\paragraph{Routed gate $\gamma$.} The learnable scalar $\gamma$ (initialized to $0.1$) controls the progressive contribution of routed experts. With $\gamma=0$ the model reduces to a dense SwiGLU with Zipf-routed experts kept as reserve capacity, recovering pure dense convergence in early training. As $\gamma$ grows via gradient descent, the routed branch contributes an increasing share of the update, enabling specialization once the shared backbone has stabilized. Empirically $\gamma$ rises monotonically during pretraining (from $0.10$ to $\sim$$0.15$--$0.30$ after $10$k steps on our setup), indicating the experts progressively learn useful residuals that the shared branch does not capture.
+The combination is a simple residual sum: both branches write into the residual stream with equal weight. This avoids learnable gating scalars which, under mixed-precision (BF16) training, suffer from numerical underflow on their gradients and stall at initialization.
 
 \subsubsection{Zipf-balanced Greedy Bin-Packing}
 
