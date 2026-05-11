@@ -1,0 +1,27 @@
+model,params_m,step,tokens_seen_m,train_loss,train_ppl,eval_loss,eval_ppl,notes
+Dense SwiGLU,306.5,100,105,6.669806,788.24,,,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,100,105,6.846393,940.48,,,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=+0.176587
+Dense SwiGLU,306.5,250,262,5.300840,200.51,5.301103,200.56,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,250,262,5.434151,229.10,5.453555,233.59,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=+0.133311
+Dense SwiGLU,306.5,500,524,4.445045,85.20,4.390787,80.70,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,500,524,4.479610,88.20,4.434883,84.34,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=+0.034565
+Dense SwiGLU,306.5,700,734,3.856718,47.31,,,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,700,734,3.861920,47.56,,,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=+0.005202
+Dense SwiGLU,306.5,740,776,3.781693,43.89,,,8xB300 batch64 seq2048 iso-batch first_logged_train_crossover
+Residual Token-Routed,306.5,740,776,3.780273,43.83,,,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.001420 first_logged_train_crossover
+Dense SwiGLU,306.5,750,786,3.768289,43.31,3.834871,46.29,8xB300 batch64 seq2048 iso-batch first_eval_crossover
+Residual Token-Routed,306.5,750,786,3.764967,43.16,3.828609,46.00,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.003322 first_eval_crossover
+Dense SwiGLU,306.5,1000,1049,3.549987,34.81,3.614638,37.14,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,1000,1049,3.532352,34.20,3.594939,36.41,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.017635
+Dense SwiGLU,306.5,2000,2097,3.195269,24.42,3.289476,26.83,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,2000,2097,3.171965,23.85,3.265788,26.20,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.023304
+Dense SwiGLU,306.5,4000,4194,3.092514,22.03,3.074527,21.64,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,4000,4194,3.073789,21.62,3.055961,21.24,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.018725
+Dense SwiGLU,306.5,6000,6291,3.006092,20.21,2.979795,19.68,8xB300 batch64 seq2048 iso-batch
+Residual Token-Routed,306.5,6000,6291,2.990648,19.90,2.963490,19.37,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.015444
+Dense SwiGLU,306.5,7500,7864,2.891171,18.01,2.948246,19.07,8xB300 batch64 seq2048 iso-batch final_eval
+Residual Token-Routed,306.5,7500,7864,2.876718,17.76,2.932897,18.78,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.014453 final_eval
+Dense SwiGLU,306.5,7620,7990,2.932437,18.77,,,8xB300 batch64 seq2048 iso-batch final_logged_step
+Residual Token-Routed,306.5,7620,7990,2.923100,18.60,,,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.009337 final_logged_step
+Dense SwiGLU,306.5,last50,,2.944597,,,,smoothed_mean_final_50_logged_steps
+Residual Token-Routed,306.5,last50,,2.928258,,,,smoothed_mean_final_50_logged_steps gap=-0.016339

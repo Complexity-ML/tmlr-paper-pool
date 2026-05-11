@@ -277,9 +277,9 @@ class TokenRoutedMLPTriton(nn.Module):
     - Low token IDs -> Expert 0 (frequent tokens)
     - High token IDs -> Expert N-1 (rare tokens)
 
-    INL Innovation (2025):
-    - Mu-guided expert routing: mu can shift the expert selection
-    - Creates soft routing influenced by dynamics context
+    Mu-guided routing:
+    - mu can shift the expert selection
+    - Creates soft routing influenced by the contextual mu state
     """
 
     def __init__(
@@ -316,7 +316,7 @@ class TokenRoutedMLPTriton(nn.Module):
             self._create_token_mapping(vocab_size, num_experts),
         )
 
-        # INL 2025: Mu-guided expert routing
+        # Mu-guided expert routing
         # mu_router projects mu to expert preference logits
         # Initialized to zero so routing starts as pure token-based
         self.mu_router = nn.Linear(hidden_size, num_experts, bias=False)
@@ -415,7 +415,7 @@ class TokenRoutedMLPTriton(nn.Module):
         self,
         hidden_states: torch.Tensor,
         token_ids: Optional[torch.Tensor] = None,
-        mu: Optional[torch.Tensor] = None,  # INL: mu guides expert selection
+        mu: Optional[torch.Tensor] = None,  # mu guides expert selection
     ) -> torch.Tensor:
         """
         Forward pass with mu-guided routing.
@@ -423,7 +423,7 @@ class TokenRoutedMLPTriton(nn.Module):
         Args:
             hidden_states: [batch, seq_len, hidden_size]
             token_ids: [batch, seq_len] - for routing
-            mu: [batch, seq_len, hidden_size] - mu from dynamics (INL)
+            mu: [batch, seq_len, hidden_size] - contextual mu state
 
         Returns:
             output: [batch, seq_len, hidden_size]
@@ -436,7 +436,7 @@ class TokenRoutedMLPTriton(nn.Module):
             token_ids_clamped = token_ids.clamp(0, self.vocab_size - 1)
             base_expert_ids = self.token_to_expert[token_ids_clamped]  # [batch, seq]
 
-            # INL 2025: Mu-guided expert routing
+            # Mu-guided expert routing
             # mu can override or shift the expert selection
             if mu is not None:
                 # Get mu preference for each expert

@@ -407,7 +407,7 @@ def persistent_cggr_gemm(
 
 
 # =============================================================================
-# SIMPLE FUSED SWIGLU KERNEL (llm-v3-dynamics style)
+# SIMPLE FUSED SWIGLU KERNEL
 # =============================================================================
 
 if HAS_TRITON:
@@ -421,7 +421,7 @@ if HAS_TRITON:
     ):
         """
         Simple fused SwiGLU: silu(gate) * up
-        Based on llm-v3-dynamics pattern - BLOCK_SIZE=1024 for max throughput
+        Uses BLOCK_SIZE=1024 for high throughput.
         Supports fp32, fp16, and bf16.
         """
         pid = tl.program_id(0)
@@ -487,7 +487,7 @@ def persistent_swiglu_cggr(
     """
     Fast SwiGLU with expert routing.
 
-    Uses simple Triton kernel for SwiGLU (llm-v3-dynamics style)
+    Uses a simple Triton kernel for SwiGLU
     + PyTorch matmuls (cuBLAS optimized).
 
     Args:
@@ -521,7 +521,7 @@ def persistent_swiglu_cggr(
             gate_out = t @ gw
             up_out = t @ uw
 
-            # Fused SwiGLU (Triton kernel - llm-v3-dynamics style)
+            # Fused SwiGLU (Triton kernel)
             intermediate = fused_swiglu_simple(gate_out, up_out)
 
             # Down projection

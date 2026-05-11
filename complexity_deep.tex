@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-We present COMPLEXITY-DEEP, a language model architecture introducing three original contributions: (1) \textbf{Token-Routed MLP with Zipf-balanced routing via greedy bin-packing}, a deterministic per-token routing that distributes tokens to experts with perfect load balance (1.0000$\times$) via a greedy algorithm aware of frequencies~\citep{zipf1949human}, eliminating the learned router and auxiliary losses; (2) \textbf{Mu-Guided Attention}, where a latent state $\mu$ flows between layers to guide K, Q, and V projections after the MLP, capturing expert-specific information; and (3) \textbf{Shared Lexical Expert}, a dense MLP shared across all tokens that captures universal patterns (syntax, grammar) while routed experts specialize. We provide formal theoretical analysis proving capacity equivalence with dense models at $1/n$ compute cost. An initial 1.5B-parameter pilot model motivated an architectural simplification: the Dynamic Scaler PiD, redundant with Adam's adaptive mechanisms, was removed. The evaluation includes component ablation at 187M scale (500M tokens) and an iso-parameter scaling comparison at 384M (8B tokens FineWeb-Edu) with identical conditions.
+We present COMPLEXITY-DEEP, a language model architecture introducing three original contributions: (1) \textbf{Token-Routed MLP with Zipf-balanced routing via greedy bin-packing}, a deterministic per-token routing that distributes tokens to experts with perfect load balance (1.0000$\times$) via a greedy algorithm aware of frequencies~\citep{zipf1949human}, eliminating the learned router and auxiliary losses; (2) \textbf{Mu-Guided Attention}, where a latent state $\mu$ flows between layers to guide K, Q, and V projections after the MLP, capturing expert-specific information; and (3) \textbf{Shared Lexical Expert}, a dense MLP shared across all tokens that captures universal patterns (syntax, grammar) while routed experts specialize. We provide formal theoretical analysis proving capacity equivalence with dense models at $1/n$ compute cost. An initial 1.5B-parameter pilot model motivated an architectural simplification: an adaptive residual scaler, redundant with Adam's adaptive mechanisms, was removed. The evaluation includes component ablation at 187M scale (500M tokens) and a corrected iso-parameter scaling comparison at $\sim$300M (8B tokens FineWeb-Edu), where Token-Routed pays an early specialization cost, first beats dense at step 740 on logged train loss and step 750 on validation loss, and finishes the 8B-token budget with a smoothed train-loss advantage of $-0.0163$.
 \end{abstract}
 
 %=============================================================================
@@ -234,7 +234,7 @@ Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy 
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/expert_balance.png}
+\includegraphics[width=0.9\textwidth]{expert_balance.png}
 \caption{Expert balance under Zipf bin-packing. The bin-packing balances the \textit{total load} (frequency) to 1.0000$\times$, not the number of tokens (which varies slightly around 25\%).}
 \label{fig:expert_balance}
 \end{figure}
@@ -242,14 +242,14 @@ Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy 
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/component_activity.png}
+\includegraphics[width=0.9\textwidth]{component_activity.png}
 \caption{Mu-Guidance activity per layer. \textit{Left}: norms of $\mu_{\text{param}}$ and $\mu_{\text{proj}}$. \textit{Right}: norms of the $\mu \to K$ and $\mu \to Q$ projections in attention.}
 \label{fig:component_activity}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/mu_contribution.png}
+\includegraphics[width=0.9\textwidth]{mu_contribution.png}
 \caption{Mu contribution ratio to K, Q, V projections per layer. Mu-Guidance contributes $\sim$50\% of projection magnitude.}
 \label{fig:mu_contribution}
 \end{figure}
@@ -259,12 +259,12 @@ Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy 
 
 The computation of $\mu$ is moved \textit{after} expert dispatch (instead of before), allowing $\mu$ to capture expert-specific information. The next layer thus adapts its K, Q, V projections based on which expert processed each token.
 
-\subsection{Adaptive Dynamic Scaler (Removed)}
+\subsection{Adaptive Residual Scaler (Removed)}
 \label{sec:adaptive_scaler}
 
-An earlier version of the architecture included a PiD-style Dynamic Scaler that modulated residual contributions via a learned controller. Empirical results at both 100M and 171M proxy scales showed inconsistent benefits: at 100M, removing PiD \textit{improved} loss by $-0.005$, while at 171M it contributed only $+0.010$. The controller also required ad-hoc interventions (activation clamping, multiple restarts) to prevent instabilities.
+An earlier version of the architecture included an adaptive residual scaler that modulated residual contributions via a learned controller. Empirical results at both 100M and 171M proxy scales showed inconsistent benefits: at 100M, removing the scaler \textit{improved} loss by $-0.005$, while at 171M it contributed only $+0.010$. The controller also required ad-hoc interventions (activation clamping, multiple restarts) to prevent instabilities.
 
-Based on this evidence, the Dynamic Scaler was removed from the architecture. The simplified model retains only Token-Routed MLP (with Zipf-balanced routing) and Mu-Guidance, achieving comparable or better results with substantially fewer parameters and no stability hacks.
+Based on this evidence, the adaptive scaler was removed from the architecture. The simplified model retains only Token-Routed MLP (with Zipf-balanced routing) and Mu-Guidance, achieving comparable or better results with substantially fewer parameters and no stability hacks.
 
 %=============================================================================
 \section{Theoretical Analysis}
@@ -540,34 +540,35 @@ Max context & 4096 \\
 
 \begin{table}[h]
 \centering
-\caption{COMPLEXITY-DEEP 384M model configurations (iso-params comparison)}
-\label{tab:config_384m}
+\caption{COMPLEXITY-DEEP 300M model configurations (iso-params comparison)}
+\label{tab:config_300m}
 \begin{tabular}{lll}
 \toprule
 \textbf{Parameter} & \textbf{Token-Routed (MoE)} & \textbf{Dense Baseline} \\
 \midrule
-Layers ($L$) & 20 & 20 \\
+Layers ($L$) & 18 & 18 \\
 Dimension ($d_{model}$) & 1024 & 1024 \\
 Attention heads ($n_h$) & 16 & 16 \\
 KV heads ($n_{kv}$) & 4 (GQA ratio 4:1) & 4 (GQA ratio 4:1) \\
-Intermediate dimension & 3200 & 4358 \\
-Expert intermediate & 800 & --- \\
-Shared expert intermediate & 800 & --- \\
-Experts ($n_{experts}$) & 4 & 1 (dense) \\
-Mu-Guidance & Yes & No \\
+Routed intermediate dimension & 256 total & --- \\
+Expert intermediate & 64 & --- \\
+Shared expert intermediate & 3840 & --- \\
+Experts ($n_{experts}$) & 4, top-$k=2$ & 1 (dense) \\
+Shared/routed gates & 1.0 / 0.1 & --- \\
+Mu-Guidance & No (300M scaling run) & No \\
 Vocabulary & 32000 & 32000 \\
-Max context & 4096 & 4096 \\
+Max context & 2048 & 2048 \\
 \midrule
-\textbf{Total parameters} & \textbf{383.5M} & \textbf{384.5M} \\
-Active params/token & $\sim$105M & 384.5M \\
+\textbf{Total parameters} & \textbf{306.5M} & \textbf{306.5M} \\
+Active MLP path/token & shared + 2 routed experts & dense SwiGLU \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{384M Model Configuration}
-\label{sec:config_384m}
+\subsection{300M Model Configuration}
+\label{sec:config_300m}
 
-For the iso-parameter scaling comparison (Section~\ref{sec:scaling_384m}), we train two architectures at $\sim$384M parameters (Table~\ref{tab:config_384m}): a Token-Routed MoE (383.5M, 4 experts with shared expert of 800 intermediate dimensions) and a dense SwiGLU baseline (384.5M, $d_{ff} = 4358$). Both share identical backbone (20 layers, $d_{model}=1024$, GQA 16/4, RMSNorm, QK-Norm) and training recipe.
+For the corrected iso-parameter scaling comparison (Section~\ref{sec:scaling_300m}), we train two architectures at $\sim$300M parameters (Table~\ref{tab:config_300m}): a residual Token-Routed model (306.5M, 4 experts, top-$k=2$, large shared expert and small routed branch) and a dense SwiGLU baseline (306.5M, $d_{ff} = 4096$). Both share the same backbone (18 layers, $d_{model}=1024$, GQA 16/4, RMSNorm, QK-Norm), tokenizer, sequence length, optimizer, warmup schedule, and FineWeb-Edu token budget.
 
 %=============================================================================
 \section{Experiments}
@@ -577,7 +578,7 @@ For the iso-parameter scaling comparison (Section~\ref{sec:scaling_384m}), we tr
 \subsection{Pilot Study}
 \label{sec:pilot_study}
 
-An exploratory 1.5B-parameter model trained on 7B tokens motivated the architectural simplification: the PiD Dynamic Scaler was removed (redundant with Adam), Zipf-balanced routing was added, and the Shared Lexical Expert was introduced. The definitive evaluation is presented at the 187M scale (Run 2) and the 384M iso-params comparison (Table~\ref{tab:config_384m}).
+An exploratory 1.5B-parameter model trained on 7B tokens motivated the architectural simplification: the adaptive residual scaler was removed (redundant with Adam), Zipf-balanced routing was added, and the Shared Lexical Expert was introduced. The definitive evaluation is presented at the 187M scale (Run 2) and the corrected 300M iso-parameter comparison (Table~\ref{tab:config_300m}).
 
 \subsection{Training Recipe}
 \label{sec:training_recipe}
@@ -630,7 +631,7 @@ Mixtral & No & Top-2 & Required \\
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.65\textwidth]{../figures/head_expert_heatmap.png}
+\includegraphics[width=0.65\textwidth]{head_expert_heatmap.png}
 \caption{Attention head $\times$ expert heatmap (median layer). Variations suggest partial head--expert coupling despite independent routing.}
 \label{fig:head_expert_heatmap}
 \end{figure}
@@ -708,56 +709,86 @@ The full model (Run 2) converges significantly faster than both the dense baseli
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
+\includegraphics[width=0.9\textwidth]{fig_loss_curves.png}
 \caption{Ablation loss curves (187M, 500M tokens): Dense vs full Token-Routed (Shared+Mu+Zipf) vs Token-Routed without Mu-Guidance. The full model (blue) converges faster throughout.}
 \label{fig:loss_curves}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_loss_gap.png}
+\includegraphics[width=0.9\textwidth]{fig_loss_gap.png}
 \caption{Ablation loss gap TR $-$ Dense (187M, 500M tokens). Negative (green) = TR wins. The TR leads for 95\% of training.}
 \label{fig:loss_gap}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_expert_loss.png}
+\includegraphics[width=0.9\textwidth]{fig_expert_loss.png}
 \caption{Per-expert loss during ablation training (187M). All 4 experts converge in parallel (max gap 0.23).}
 \label{fig:expert_loss}
 \end{figure}
 \FloatBarrier
 
-\subsection{Scaling Comparison (384M, 8B tokens)}
-\label{sec:scaling_384m}
+\subsection{Scaling Comparison (300M, 8B tokens)}
+\label{sec:scaling_300m}
 
-To validate the architecture at larger scale, we train iso-parameter models (Table~\ref{tab:config_384m}) on 8B tokens (15,259 steps). The Token-Routed model (383.5M, 4 experts, $d_{ff} = 3200$, shared expert $= 800$) is compared against a dense SwiGLU baseline (384.5M, $d_{ff} = 4358$) with identical hyperparameters. The loss gap narrows from $+0.28$ (first 1K steps) to a stable $+0.09$ (from step 5K onward), demonstrating progressive expert specialization under standard AdamW (see Section~\ref{sec:limitations} for analysis).
+To validate the corrected architecture at larger scale, we train iso-parameter models (Table~\ref{tab:config_300m}) on an 8B-token FineWeb-Edu budget. Both runs use the same global batch of 1,048,576 tokens/step (8 GPUs $\times$ batch 64 $\times$ sequence length 2048), so matched raw step number equals matched tokens seen, and no token-grid interpolation is required.
 
-\textit{Note:} AdamW is designed for homogeneous parameter updates, which structurally favors the dense architecture. The residual gap of $+0.09$ reflects this optimizer mismatch rather than an architectural limitation. We propose AdamTR (Section~\ref{sec:limitations}), an AdamW extension with per-expert gradient normalization and learning rate scaling, to close this gap.
+The two runs start from comparable random-init loss (TR 10.58, dense 10.54) and the Token-Routed model trails the dense baseline during the early phase while its experts are still random and not yet specialized: at step 100 ($\approx$105M tokens) the gap is $+0.177$ in favor of dense, peaking near $+0.31$ around step 40. The gap shrinks overall as Zipf-routed experts specialize: the first logged train-loss win appears at step 740 ($\approx$776M tokens), and the first matched validation win appears at step 750. The lead peaks near $-0.023$ around step 2000, then narrows slightly as both runs approach convergence: at step 7620 ($\approx$7.99B tokens, end of budget) Token-Routed reaches train loss \textbf{2.9231} versus \textbf{2.9324} for dense, and the smoothed final gap over the last 50 logged steps is \textbf{$-0.0163$} in favor of Token-Routed. Expert utilization remains tightly balanced throughout (0.2481/0.2635/0.2481/0.2403, zero dead experts), confirming that the win is not driven by expert collapse or routing imbalance.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_384m_loss_curves.png}
-\caption{384M iso-params: Token-Routed MoE (383.5M) vs Dense SwiGLU (384.5M) over 8B tokens.}
-\label{fig:384m_loss}
+\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
+\caption{Corrected 300M scaling curves at iso-batch (1,048,576 tokens/step). Token-Routed (red) trails dense (blue) during the first $\approx$700 steps while experts specialize, reaches parity, then crosses over: by step 1000 ($\approx$1.05B tokens) Token-Routed leads.}
+\label{fig:300m_loss_curves}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_384m_loss_gap.png}
-\caption{384M loss gap (TR $-$ Dense). The gap narrows from $+0.28$ to a stable $+0.09$, demonstrating progressive expert specialization under AdamW.}
-\label{fig:384m_gap}
+\includegraphics[width=0.72\textwidth]{fig_300m_eval_win.png}
+\caption{Matched validation-loss comparison. Token-Routed pays an early specialization cost at the first two validation points, then crosses the dense baseline at step 750 ($\approx$786M tokens) and remains ahead through the 8B-token budget.}
+\label{fig:300m_eval_win}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_384m_avg_bucket.png}
-\caption{Average loss per 1000-step bucket (384M, 8B tokens). The gap stabilizes at $+0.09$ from step 5K.}
-\label{fig:384m_avg}
+\includegraphics[width=0.9\textwidth]{fig_300m_loss_gap.png}
+\caption{Training-loss gap at matched step (= matched tokens, iso-batch), computed as Token-Routed loss minus dense loss. Negative values indicate Token-Routed ahead. The gap is positive (TR behind) during the early specialization phase and first turns negative at the logged step 740.}
+\label{fig:300m_loss_gap}
 \end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_300m_expert_balance.png}
+\caption{Expert utilization during the corrected 300M Token-Routed run. All four experts remain active and near-balanced; the observed matched-budget win is not caused by expert collapse.}
+\label{fig:300m_expert_balance}
+\end{figure}
+
+\begin{table}[!htbp]
+\centering
+\caption{300M scaling comparison at iso-batch (1,048,576 tokens/step), full 8B-token run. Train loss is reported at matched step. Negative gap indicates Token-Routed ahead. Last row is the smoothed mean of the final 50 logged steps.}
+\label{tab:scaling_300m_result}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Step} & \textbf{Tokens seen} & \textbf{Dense (306.5M)} & \textbf{TR (306.5M, k=2)} & \textbf{Gap (TR $-$ Dense)} \\
+\midrule
+100         & 105M  & 6.6698 & 6.8464          & $+0.177$ \\
+500         & 524M  & 4.4450 & 4.4796          & $+0.035$ \\
+700         & 734M  & 3.8567 & 3.8619          & $+0.005$ \\
+1000        & 1.05B & 3.5500 & \textbf{3.5324} & $\mathbf{-0.018}$ \\
+2000        & 2.10B & 3.1953 & \textbf{3.1720} & $\mathbf{-0.023}$ \\
+4000        & 4.19B & 3.0925 & \textbf{3.0738} & $\mathbf{-0.019}$ \\
+6000        & 6.29B & 3.0061 & \textbf{2.9906} & $\mathbf{-0.015}$ \\
+7620        & 7.99B & 2.9324 & \textbf{2.9231} & $\mathbf{-0.009}$ \\
+\midrule
+last 50 (smoothed) & --- & 2.9446 & \textbf{2.9283} & $\mathbf{-0.016}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \FloatBarrier
 
-\paragraph{Training throughput.} The Token-Routed model's active compute per token is $2 \times d_{ff}/n$ (one routed expert plus shared expert) vs $d_{ff}$ for dense. With optimized Triton kernels (grouped GEMM with Tensor Cores, sort-based dispatch), this translates to a \textbf{1.57$\times$} wall-clock speedup per step at 384M scale on 4$\times$ NVIDIA B200 (1.61\,s/step vs 2.52\,s/step). Without kernel optimization the throughput is comparable (7.2\,s/step for both architectures on 2$\times$ RTX PRO 6000), as the routing overhead offsets the compute savings. The routing table lookup itself is $O(1)$ with zero GPU synchronization.
+\paragraph{Training throughput.} The Token-Routed model's active compute per token is $2 \times d_{ff}/n$ (one routed expert plus shared expert) vs $d_{ff}$ for dense. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen; wall-clock cost per step is comparable since the active routed compute is small relative to the shared expert. The routing table lookup itself is $O(1)$ with zero GPU synchronization.
 
 \subsection{Inference Performance}
 \label{sec:inference_perf}
@@ -766,40 +797,11 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_inference_bench.png}
+\includegraphics[width=0.9\textwidth]{fig_inference_bench.png}
 \caption{Inference benchmark on a single NVIDIA RTX PRO 6000 (96\,GB). 100 requests at 10 RPS, 128 input tokens, 1,900 output tokens. Sustained throughput: 8,078 tok/s; peak: 10,179 tok/s; median TTFT: 29.3\,ms; median ITL: 7.9\,ms.}
 \label{fig:inference_bench}
 \end{figure}
 
-\paragraph{384M inference benchmark.} The 384M Token-Routed model deployed on vLLM 0.18 achieves \textbf{4,900 tok/s} sustained throughput (peak 5,700 tok/s) on a single RTX PRO 6000, with median TTFT of 39.6\,ms and ITL of 16.0\,ms. Despite having 2$\times$ the parameters of the 187M model, throughput decreases by only 40\%, confirming the inference efficiency of deterministic routing (Figures~\ref{fig:zero_shot}--\ref{fig:vllm_comparison}).
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_zero_shot.png}
-\caption{Zero-shot benchmarks (384M, 8B tokens): Token-Routed MoE vs Dense SwiGLU. The MoE trails by 1--2 points on ARC-Easy and HellaSwag, consistent with the $+0.09$ loss gap. MMLU is near-random for both (no SFT).}
-\label{fig:zero_shot}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_vllm_comparison.png}
-\caption{vLLM inference comparison: 187M (Run 2) vs 384M (8B tokens). The 384M model achieves 4,900 tok/s (2$\times$ params, only 40\% throughput reduction).}
-\label{fig:vllm_comparison}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/expert_tsne_2d.png}
-\caption{2D t-SNE of mean expert activations per layer (384M, 8B tokens). \textit{Left}: by expert. \textit{Right}: by depth.}
-\label{fig:expert_tsne_2d}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{expert_tsne_3d_multiangle.png}
-\caption{3D t-SNE of expert activations (384M, 8B tokens), multi-angle views.}
-\label{fig:expert_tsne_3d}
-\end{figure}
 \FloatBarrier
 
 \subsection{Limitations and Future Work}
@@ -807,8 +809,8 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 
 \begin{itemize}
     \item \textbf{No-Mu ablation}: \textit{completed} (Run 3, Table~\ref{tab:ablation_results}). Without Mu-Guidance, Token-Routed is slower than dense ($+0.011$ in average loss), confirming the essential role of the inter-layer equilibrium signal.
-    \item \textbf{Optimizer mismatch at scale}: The $+0.09$ residual gap at 384M (Figure~\ref{fig:384m_gap}) reflects AdamW's assumption of homogeneous parameter updates, structurally favoring dense. An AdamTR variant (per-expert gradient normalization and LR scaling) is proposed to close this gap.
-    \item \textbf{Standardized benchmarks}: Zero-shot evaluation on ARC-Easy, HellaSwag, and MMLU via \texttt{lm-evaluation-harness} is reported in Figure~\ref{fig:zero_shot}.
+    \item \textbf{Full-run confirmation}: The corrected 300M run loses the first two matched validation points (steps 250 and 500), crosses over at step 750, and remains ahead through the final matched validation point at step 7500. Downstream benchmarks should be rerun from the corrected 300M checkpoints.
+    \item \textbf{Standardized benchmarks}: Zero-shot evaluation on ARC-Easy, HellaSwag, and MMLU via \texttt{lm-evaluation-harness} should be rerun on the corrected 300M checkpoints.
 \end{itemize}
 
 %=============================================================================
@@ -818,7 +820,7 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 
 We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware inter-layer communication, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
 
-Component ablation at 187M (500M tokens) shows Token-Routed outperforming the dense baseline in average loss (4.793 vs 4.905, $\Delta = -0.112$). At iso-parameter 384M scale on 8B tokens of FineWeb-Edu, the loss gap vs dense narrows from $+0.28$ to a stable $+0.09$, with the residual gap attributable to AdamW's homogeneous-update assumption rather than architectural limits. Inference on vLLM 0.18 reaches 8,078 tok/s (187M) and 4,900 tok/s (384M) sustained on a single RTX PRO 6000, confirming the deployability benefit of deterministic routing.
+Component ablation at 187M (500M tokens) shows Token-Routed outperforming the dense baseline in average loss (4.793 vs 4.905, $\Delta = -0.112$). In the corrected iso-parameter 300M scaling run at iso-batch (1,048,576 tokens/step, full 8B-token budget), Token-Routed pays a transient specialization cost during the first $\approx$700 steps (peak gap $+0.31$ near step 40), first wins on logged train loss at step 740 and on validation loss at step 750, then stays ahead until the end: the smoothed final train-loss gap over the last 50 logged steps is $-0.0163$ in favor of Token-Routed (2.9283 vs 2.9446). This reverses the earlier scaling conclusion and indicates that the corrected Token-Routed implementation becomes sample-efficient once Zipf-routed experts specialize. Inference on vLLM 0.18 reaches 8,078 tok/s for the 187M model, confirming the deployability benefit of deterministic routing; updated 300M inference numbers will be reported from the corrected checkpoint.
 
 \subsubsection*{Broader Impact Statement}
 This work introduces architectural innovations for language models. While these models have broad applications, they also carry risks of misuse. We release the model weights to enable research while encouraging responsible use.

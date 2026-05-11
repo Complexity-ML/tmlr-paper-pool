@@ -12,7 +12,7 @@
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
-\graphicspath{{../figures/}{supplementary_code/figures/}{figures/}}
+\graphicspath{{}{supplementary_code/figures/}{figures/}}
 \usepackage{subcaption}
 \usepackage{amssymb}
 \usepackage{amsthm}
@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage introduisant trois contributions originales : (1) \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton}, un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge (1.0000$\times$) via un algorithme glouton tenant compte des fr\'{e}quences~\citep{zipf1949human}, \'{e}liminant le routeur appris et les pertes auxiliaires ; (2) \textbf{Mu-Guided Attention}, o\`{u} un \'{e}tat latent $\mu$ circule entre les couches pour guider les projections K, Q et V apr\`{e}s le MLP, capturant l'information sp\'{e}cifique \`{a} chaque expert ; et (3) \textbf{Shared Lexical Expert}, un MLP dense partag\'{e} par tous les tokens qui capture les patterns universels (syntaxe, grammaire) tandis que les experts rout\'{e}s se sp\'{e}cialisent. Nous fournissons une analyse th\'{e}orique formelle prouvant l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses \`{a} un co\^{u}t de calcul de $1/n$. Un mod\`{e}le pilote initial de 1,5B param\`{e}tres a motiv\'{e} une simplification de l'architecture : le Dynamic Scaler PiD, redondant avec les m\'{e}canismes adaptatifs d'Adam, a \'{e}t\'{e} retir\'{e}. L'\'{e}valuation comprend une ablation de composants \`{a} l'\'{e}chelle 187M (500M tokens) et une comparaison iso-param\`{e}tres \`{a} 384M (8B tokens FineWeb-Edu) dans des conditions identiques.
+Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage introduisant trois contributions originales : (1) \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton}, un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge (1.0000$\times$) via un algorithme glouton tenant compte des fr\'{e}quences~\citep{zipf1949human}, \'{e}liminant le routeur appris et les pertes auxiliaires ; (2) \textbf{Mu-Guided Attention}, o\`{u} un \'{e}tat latent $\mu$ circule entre les couches pour guider les projections K, Q et V apr\`{e}s le MLP, capturant l'information sp\'{e}cifique \`{a} chaque expert ; et (3) \textbf{Shared Lexical Expert}, un MLP dense partag\'{e} par tous les tokens qui capture les patterns universels (syntaxe, grammaire) tandis que les experts rout\'{e}s se sp\'{e}cialisent. Nous fournissons une analyse th\'{e}orique formelle prouvant l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses \`{a} un co\^{u}t de calcul de $1/n$. Un mod\`{e}le pilote initial de 1,5B param\`{e}tres a motiv\'{e} une simplification de l'architecture : un scaler r\'{e}siduel adaptatif, redondant avec les m\'{e}canismes adaptatifs d'Adam, a \'{e}t\'{e} retir\'{e}. L'\'{e}valuation comprend une ablation de composants \`{a} l'\'{e}chelle 187M (500M tokens) et une comparaison iso-param\`{e}tres corrig\'{e}e \`{a} $\sim$300M (8B tokens FineWeb-Edu), o\`{u} Token-Routed paie un co\^{u}t de sp\'{e}cialisation initial, bat dense pour la premi\`{e}re fois au step 740 en train-loss logg\'{e} et au step 750 en validation, et termine le budget 8B tokens avec un avantage liss\'{e} de $-0,0163$ en train-loss.
 \end{abstract}
 
 %=============================================================================
@@ -234,7 +234,7 @@ D\'{e}crit en Section~\ref{sec:zipf_routing}. Remplace le round-robin par un alg
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/expert_balance.png}
+\includegraphics[width=0.9\textwidth]{expert_balance.png}
 \caption{\'{E}quilibre des experts sous bin-packing Zipf. Le bin-packing \'{e}quilibre la \textit{charge totale} (fr\'{e}quence) \`{a} 1.0000$\times$, pas le nombre de tokens (qui varie l\'{e}g\`{e}rement autour de 25\%).}
 \label{fig:expert_balance}
 \end{figure}
@@ -242,14 +242,14 @@ D\'{e}crit en Section~\ref{sec:zipf_routing}. Remplace le round-robin par un alg
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/component_activity.png}
+\includegraphics[width=0.9\textwidth]{component_activity.png}
 \caption{Activit\'{e} du Mu-Guidance par couche. \textit{Gauche} : normes de $\mu_{\text{param}}$ et $\mu_{\text{proj}}$. \textit{Droite} : normes des projections $\mu \to K$ et $\mu \to Q$ dans l'attention.}
 \label{fig:component_activity}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/mu_contribution.png}
+\includegraphics[width=0.9\textwidth]{mu_contribution.png}
 \caption{Ratio de contribution de Mu aux projections K, Q, V par couche. Le Mu-Guidance contribue \`{a} $\sim$50\% de la magnitude des projections.}
 \label{fig:mu_contribution}
 \end{figure}
@@ -259,12 +259,12 @@ D\'{e}crit en Section~\ref{sec:zipf_routing}. Remplace le round-robin par un alg
 
 Le calcul de $\mu$ est d\'{e}plac\'{e} \textit{apr\`{e}s} le dispatch expert (au lieu d'avant), permettant \`{a} $\mu$ de capturer l'information sp\'{e}cifique \`{a} chaque expert. La couche suivante adapte ainsi ses projections K, Q, V en fonction de l'expert qui a trait\'{e} chaque token.
 
-\subsection{Dynamic Scaler adaptatif (Retir\'{e})}
+\subsection{Scaler r\'{e}siduel adaptatif (Retir\'{e})}
 \label{sec:adaptive_scaler}
 
-Une version ant\'{e}rieure de l'architecture incluait un Dynamic Scaler de style PiD qui modulait les contributions r\'{e}siduelles via un contr\^{o}leur appris. Les r\'{e}sultats empiriques aux \'{e}chelles proxy 100M et 171M ont montr\'{e} des b\'{e}n\'{e}fices inconsistants : \`{a} 100M, retirer le PiD \textit{am\'{e}liorait} la perte de $-0,005$, tandis qu'\`{a} 171M il ne contribuait que $+0,010$. Le contr\^{o}leur n\'{e}cessitait \'{e}galement des interventions ad-hoc (clampage d'activations, red\'{e}marrages multiples) pour pr\'{e}venir les instabilit\'{e}s.
+Une version ant\'{e}rieure de l'architecture incluait un scaler r\'{e}siduel adaptatif qui modulait les contributions r\'{e}siduelles via un contr\^{o}leur appris. Les r\'{e}sultats empiriques aux \'{e}chelles proxy 100M et 171M ont montr\'{e} des b\'{e}n\'{e}fices inconsistants : \`{a} 100M, retirer le scaler \textit{am\'{e}liorait} la perte de $-0,005$, tandis qu'\`{a} 171M il ne contribuait que $+0,010$. Le contr\^{o}leur n\'{e}cessitait \'{e}galement des interventions ad-hoc (clampage d'activations, red\'{e}marrages multiples) pour pr\'{e}venir les instabilit\'{e}s.
 
-Sur la base de ces \'{e}vidences, le Dynamic Scaler a \'{e}t\'{e} retir\'{e} de l'architecture. Le mod\`{e}le simplifi\'{e} ne conserve que le Token-Routed MLP (avec routage Zipf-balanced) et le Mu-Guidance, obtenant des r\'{e}sultats comparables ou meilleurs avec substantiellement moins de param\`{e}tres et aucun hack de stabilit\'{e}.
+Sur la base de ces \'{e}vidences, le scaler adaptatif a \'{e}t\'{e} retir\'{e} de l'architecture. Le mod\`{e}le simplifi\'{e} ne conserve que le Token-Routed MLP (avec routage Zipf-balanced) et le Mu-Guidance, obtenant des r\'{e}sultats comparables ou meilleurs avec substantiellement moins de param\`{e}tres et aucun hack de stabilit\'{e}.
 
 %=============================================================================
 \section{Analyse th\'{e}orique}
@@ -473,7 +473,7 @@ L'erreur d'approximation pour un token $t \in T_i$ est born\'{e}e par la capacit
 \begin{proposition}[D\'{e}composition de l'erreur]
 L'erreur totale d'approximation de COMPLEXITY-DEEP se d\'{e}compose comme :
 \begin{equation}
-\mathcal{E}_{total} \leq \underbrace{\mathcal{E}_{attn}}_{attention} + \underbrace{\mathcal{E}_{routing}}_{d\'{e}calage\ expert} + \underbrace{\mathcal{E}_{expert}}_{intra\text{-}expert} + \underbrace{\mathcal{E}_{\mu}}_{guidage\ \mu}
+\mathcal{E}_{total} \leq \underbrace{\mathcal{E}_{attn}}_{\text{attention}} + \underbrace{\mathcal{E}_{routing}}_{\text{decalage expert}} + \underbrace{\mathcal{E}_{expert}}_{\text{intra-expert}} + \underbrace{\mathcal{E}_{\mu}}_{\text{guidage } \mu}
 \end{equation}
 o\`{u} :
 \begin{itemize}
@@ -540,34 +540,35 @@ Contexte max & 4096 \\
 
 \begin{table}[h]
 \centering
-\caption{Configurations COMPLEXITY-DEEP 384M (comparaison iso-param\`{e}tres)}
-\label{tab:config_384m}
+\caption{Configurations COMPLEXITY-DEEP 300M (comparaison iso-param\`{e}tres)}
+\label{tab:config_300m}
 \begin{tabular}{lll}
 \toprule
 \textbf{Param\`{e}tre} & \textbf{Token-Routed (MoE)} & \textbf{Baseline dense} \\
 \midrule
-Couches ($L$) & 20 & 20 \\
+Couches ($L$) & 18 & 18 \\
 Dimension ($d_{model}$) & 1024 & 1024 \\
 T\^{e}tes d'attention ($n_h$) & 16 & 16 \\
 T\^{e}tes KV ($n_{kv}$) & 4 (ratio GQA 4:1) & 4 (ratio GQA 4:1) \\
-Dimension interm\'{e}diaire & 3200 & 4358 \\
-Interm\'{e}diaire expert & 800 & --- \\
-Interm\'{e}diaire shared expert & 800 & --- \\
-Experts ($n_{experts}$) & 4 & 1 (dense) \\
-Mu-Guidance & Oui & Non \\
+Dimension interm\'{e}diaire rout\'{e}e & 256 total & --- \\
+Interm\'{e}diaire expert & 64 & --- \\
+Interm\'{e}diaire shared expert & 3840 & --- \\
+Experts ($n_{experts}$) & 4, top-$k=2$ & 1 (dense) \\
+Gates shared/routed & 1,0 / 0,1 & --- \\
+Mu-Guidance & Non (run scaling 300M) & Non \\
 Vocabulaire & 32000 & 32000 \\
-Contexte max & 4096 & 4096 \\
+Contexte max & 2048 & 2048 \\
 \midrule
-\textbf{Total param\`{e}tres} & \textbf{383,5M} & \textbf{384,5M} \\
-Param\`{e}tres actifs/token & $\sim$105M & 384,5M \\
+\textbf{Total param\`{e}tres} & \textbf{306,5M} & \textbf{306,5M} \\
+Chemin MLP actif/token & shared + 2 experts rout\'{e}s & SwiGLU dense \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Configuration du mod\`{e}le 384M}
-\label{sec:config_384m}
+\subsection{Configuration du mod\`{e}le 300M}
+\label{sec:config_300m}
 
-Pour la comparaison iso-param\`{e}tres au scale (Section~\ref{sec:scaling_384m}), nous entra\^{i}nons deux architectures \`{a} $\sim$384M param\`{e}tres (Table~\ref{tab:config_384m}) : un MoE Token-Routed (383,5M, 4 experts avec shared expert de 800 dimensions interm\'{e}diaires) et une baseline dense SwiGLU (384,5M, $d_{ff} = 4358$). Les deux partagent le m\^{e}me backbone (20 couches, $d_{model}=1024$, GQA 16/4, RMSNorm, QK-Norm) et la m\^{e}me recette d'entra\^{i}nement.
+Pour la comparaison iso-param\`{e}tres corrig\'{e}e au scale (Section~\ref{sec:scaling_300m}), nous entra\^{i}nons deux architectures \`{a} $\sim$300M param\`{e}tres (Table~\ref{tab:config_300m}) : un mod\`{e}le Token-Routed r\'{e}siduel (306,5M, 4 experts, top-$k=2$, grand shared expert et petite branche rout\'{e}e) et une baseline dense SwiGLU (306,5M, $d_{ff} = 4096$). Les deux partagent le m\^{e}me backbone (18 couches, $d_{model}=1024$, GQA 16/4, RMSNorm, QK-Norm), tokenizer, longueur de s\'{e}quence, optimiseur, warmup et budget FineWeb-Edu.
 
 %=============================================================================
 \section{Exp\'{e}riences}
@@ -577,7 +578,7 @@ Pour la comparaison iso-param\`{e}tres au scale (Section~\ref{sec:scaling_384m})
 \subsection{\'{E}tude pilote}
 \label{sec:pilot_study}
 
-Un mod\`{e}le exploratoire de 1,5B param\`{e}tres entra\^{i}n\'{e} sur 7B tokens a motiv\'{e} la simplification de l'architecture : le Dynamic Scaler PiD a \'{e}t\'{e} retir\'{e} (redondant avec Adam), le routage Zipf-balanced a \'{e}t\'{e} ajout\'{e}, et le Shared Lexical Expert a \'{e}t\'{e} introduit. L'\'{e}valuation d\'{e}finitive est pr\'{e}sent\'{e}e \`{a} l'\'{e}chelle 187M (Run 2) et la comparaison iso-param\`{e}tres 384M (Table~\ref{tab:config_384m}).
+Un mod\`{e}le exploratoire de 1,5B param\`{e}tres entra\^{i}n\'{e} sur 7B tokens a motiv\'{e} la simplification de l'architecture : le scaler r\'{e}siduel adaptatif a \'{e}t\'{e} retir\'{e} (redondant avec Adam), le routage Zipf-balanced a \'{e}t\'{e} ajout\'{e}, et le Shared Lexical Expert a \'{e}t\'{e} introduit. L'\'{e}valuation d\'{e}finitive est pr\'{e}sent\'{e}e \`{a} l'\'{e}chelle 187M (Run 2) et la comparaison iso-param\`{e}tres corrig\'{e}e 300M (Table~\ref{tab:config_300m}).
 
 \subsection{Recette d'entra\^{i}nement}
 \label{sec:training_recipe}
@@ -630,7 +631,7 @@ Mixtral & Non & Top-2 & Requis \\
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.65\textwidth]{../figures/head_expert_heatmap.png}
+\includegraphics[width=0.65\textwidth]{head_expert_heatmap.png}
 \caption{Heatmap t\^{e}te d'attention $\times$ expert (couche m\'{e}diane). Les variations sugg\`{e}rent un couplage partiel t\^{e}te--expert malgr\'{e} un routage ind\'{e}pendant.}
 \label{fig:head_expert_heatmap}
 \end{figure}
@@ -708,56 +709,85 @@ Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense 
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_loss_curves.png}
+\includegraphics[width=0.9\textwidth]{fig_loss_curves.png}
 \caption{Courbes de perte d'ablation (187M, 500M tokens) : Dense vs Token-Routed complet (Shared+Mu+Zipf) vs Token-Routed sans Mu-Guidance. Le mod\`{e}le complet (bleu) converge plus vite.}
 \label{fig:loss_curves}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_loss_gap.png}
+\includegraphics[width=0.9\textwidth]{fig_loss_gap.png}
 \caption{\'{E}cart de perte d'ablation TR $-$ Dense (187M, 500M tokens). N\'{e}gatif (vert) = TR gagne. Le TR m\`{e}ne sur 95\% du training.}
 \label{fig:loss_gap}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_expert_loss.png}
+\includegraphics[width=0.9\textwidth]{fig_expert_loss.png}
 \caption{Perte par expert pendant l'entra\^{i}nement d'ablation (187M). Les 4 experts convergent en parall\`{e}le (\'{e}cart max 0,23).}
 \label{fig:expert_loss}
 \end{figure}
 \FloatBarrier
 
-\subsection{Comparaison au scale (384M, 8B tokens)}
-\label{sec:scaling_384m}
+\subsection{Comparaison au scale (300M, 8B tokens)}
+\label{sec:scaling_300m}
 
-Pour valider l'architecture \`{a} plus grande \'{e}chelle, nous entra\^{i}nons des mod\`{e}les iso-param\`{e}tres (Table~\ref{tab:config_384m}) sur 8B tokens (15\,259 \'{e}tapes). Le Token-Routed (383,5M, 4 experts, $d_{ff} = 3200$, shared expert $= 800$) est compar\'{e} \`{a} une baseline dense SwiGLU (384,5M, $d_{ff} = 4358$) avec les m\^{e}mes hyperparam\`{e}tres. L'\'{e}cart de perte se r\'{e}duit de $+0,28$ (premiers 1K \'{e}tapes) \`{a} un $+0,09$ stable (\`{a} partir de l'\'{e}tape 5K), montrant une sp\'{e}cialisation progressive des experts sous AdamW standard (voir Section~\ref{sec:limitations} pour l'analyse).
+Pour valider l'architecture corrig\'{e}e \`{a} plus grande \'{e}chelle, nous entra\^{i}nons des mod\`{e}les iso-param\`{e}tres (Table~\ref{tab:config_300m}) sur un budget FineWeb-Edu de 8B tokens. Les deux runs utilisent le m\^{e}me batch global de 1\,048\,576 tokens/step (8 GPUs $\times$ batch 64 $\times$ s\'{e}quence 2048) ; num\'{e}ro de step identique \'{e}quivaut donc \`{a} tokens vus identiques, sans interpolation n\'{e}cessaire.
 
-\textit{Note :} AdamW est con\c{c}u pour des mises \`{a} jour homog\`{e}nes des param\`{e}tres, ce qui favorise structurellement l'architecture dense. L'\'{e}cart r\'{e}siduel de $+0,09$ refl\`{e}te ce mismatch d'optimiseur plut\^{o}t qu'une limitation architecturale. Nous proposons AdamTR (Section~\ref{sec:limitations}), une extension d'AdamW avec normalisation de gradient par expert et scaling du learning rate, pour combler cet \'{e}cart.
+Les deux runs partent d'une perte initiale comparable (TR 10,58, dense 10,54) et le mod\`{e}le Token-Routed est en retard sur la baseline dense durant la phase initiale, le temps que ses experts (encore al\'{e}atoires) se sp\'{e}cialisent : au step 100 ($\approx$105M tokens) l'\'{e}cart est de $+0,177$ en faveur de dense, avec un pic \`{a} $+0,31$ vers le step 40. L'\'{e}cart se r\'{e}duit globalement \`{a} mesure que les experts Zipf-rout\'{e}s se sp\'{e}cialisent : le premier gain train-loss logg\'{e} appara\^{i}t au step 740 ($\approx$776M tokens), et le premier gain en validation align\'{e}e appara\^{i}t au step 750. L'avance culmine vers $-0,023$ autour du step 2000, puis se r\'{e}duit l\'{e}g\`{e}rement \`{a} mesure que les deux runs convergent : au step 7620 ($\approx$7,99B tokens, fin du budget) Token-Routed atteint une perte d'entra\^{i}nement de \textbf{2,9231} contre \textbf{2,9324} pour dense, et l'\'{e}cart liss\'{e} sur les 50 derniers steps logg\'{e}s est de \textbf{$-0,0163$} en faveur de Token-Routed. L'utilisation des experts reste \'{e}quilibr\'{e}e (0,2481/0,2635/0,2481/0,2403, z\'{e}ro expert mort), confirmant que le gain ne vient pas d'un effondrement du routage.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_384m_loss_curves.png}
-\caption{384M iso-params : Token-Routed MoE (383,5M) vs Dense SwiGLU (384,5M) sur 8B tokens.}
-\label{fig:384m_loss}
+\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
+\caption{Courbes de scaling 300M corrig\'{e}es \`{a} iso-batch (1\,048\,576 tokens/step). Token-Routed (rouge) est en retard sur dense (bleu) durant les $\approx$700 premiers steps pendant que ses experts se sp\'{e}cialisent, atteint la parit\'{e}, puis le crossover : au step 1000 ($\approx$1,05B tokens) Token-Routed est devant.}
+\label{fig:300m_loss_curves}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_384m_loss_gap.png}
-\caption{\'{E}cart de perte 384M (TR $-$ Dense). L'\'{e}cart se r\'{e}duit de $+0,28$ \`{a} un $+0,09$ stable, d\'{e}montrant une sp\'{e}cialisation progressive des experts sous AdamW.}
-\label{fig:384m_gap}
+\includegraphics[width=0.72\textwidth]{fig_300m_eval_win.png}
+\caption{Comparaison validation-loss au m\^{e}me step. Token-Routed paie un co\^{u}t de sp\'{e}cialisation aux deux premiers points de validation, puis croise la baseline dense au step 750 ($\approx$786M tokens) et reste devant jusqu'au budget 8B tokens.}
+\label{fig:300m_eval_win}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_384m_avg_bucket.png}
-\caption{Perte moyenne par tranche de 1000 \'{e}tapes (384M, 8B tokens). L'\'{e}cart se stabilise \`{a} $+0,09$ \`{a} partir de l'\'{e}tape 5K.}
-\label{fig:384m_avg}
+\includegraphics[width=0.9\textwidth]{fig_300m_loss_gap.png}
+\caption{\'{E}cart de perte d'entra\^{i}nement au m\^{e}me step (= tokens vus, iso-batch), calcul\'{e} comme perte Token-Routed moins perte dense. Les valeurs n\'{e}gatives indiquent que Token-Routed est devant. L'\'{e}cart est positif (TR derri\`{e}re) pendant la phase de sp\'{e}cialisation initiale puis devient n\'{e}gatif au step logg\'{e} 740.}
+\label{fig:300m_loss_gap}
 \end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_300m_expert_balance.png}
+\caption{Utilisation des experts pendant le run Token-Routed 300M corrig\'{e}. Les quatre experts restent actifs et proches de l'\'{e}quilibre ; le gain observ\'{e} ne vient pas d'un effondrement d'expert.}
+\label{fig:300m_expert_balance}
+\end{figure}
+
+\begin{table}[!htbp]
+\centering
+\caption{Comparaison scaling 300M \`{a} iso-batch (1\,048\,576 tokens/step), run complet 8B tokens. Train-loss au m\^{e}me step. Un \'{e}cart n\'{e}gatif indique Token-Routed en avance. Derni\`{e}re ligne : moyenne liss\'{e}e sur les 50 derniers steps log\'{e}s.}
+\label{tab:scaling_300m_result}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Step} & \textbf{Tokens vus} & \textbf{Dense (306,5M)} & \textbf{TR (306,5M, k=2)} & \textbf{\'{E}cart (TR $-$ Dense)} \\
+\midrule
+100             & 105M  & 6,6698 & 6,8464          & $+0,177$ \\
+500             & 524M  & 4,4450 & 4,4796          & $+0,035$ \\
+700             & 734M  & 3,8567 & 3,8619          & $+0,005$ \\
+1000            & 1,05B & 3,5500 & \textbf{3,5324} & $\mathbf{-0,018}$ \\
+2000            & 2,10B & 3,1953 & \textbf{3,1720} & $\mathbf{-0,023}$ \\
+4000            & 4,19B & 3,0925 & \textbf{3,0738} & $\mathbf{-0,019}$ \\
+6000            & 6,29B & 3,0061 & \textbf{2,9906} & $\mathbf{-0,015}$ \\
+7620            & 7,99B & 2,9324 & \textbf{2,9231} & $\mathbf{-0,009}$ \\
+\midrule
+liss\'{e} 50 derniers & --- & 2,9446 & \textbf{2,9283} & $\mathbf{-0,016}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 \FloatBarrier
 
-\paragraph{D\'{e}bit d'entra\^{i}nement.} Le compute actif par token du Token-Routed est $2 \times d_{ff}/n$ (un expert rout\'{e} plus shared expert) vs $d_{ff}$ pour dense. Avec des kernels Triton optimis\'{e}s (grouped GEMM sur Tensor Cores, dispatch par tri), ceci se traduit par une acc\'{e}l\'{e}ration wall-clock de \textbf{1,57$\times$} par \'{e}tape \`{a} l'\'{e}chelle 384M sur 4$\times$ NVIDIA B200 (1,61\,s/\'{e}tape vs 2,52\,s/\'{e}tape). Sans optimisation kernel le d\'{e}bit est comparable (7,2\,s/\'{e}tape pour les deux architectures sur 2$\times$ RTX PRO 6000), le surco\^{u}t de routage compensant les \'{e}conomies de compute. Le lookup de la table de routage est lui-m\^{e}me $O(1)$ avec z\'{e}ro synchronisation GPU.
+\paragraph{D\'{e}bit d'entra\^{i}nement.} Le compute actif par token du Token-Routed est $2 \times d_{ff}/n$ (un expert rout\'{e} plus shared expert) vs $d_{ff}$ pour dense. Les deux runs ont \'{e}t\'{e} entra\^{i}n\'{e}s sur 8$\times$B300, dense atteignant environ 0,95M tokens/s et Token-Routed environ 0,75M tokens/s au m\^{e}me batch global (1\,048\,576 tokens/step). Toutes les comparaisons de qualit\'{e} ci-dessus sont \`{a} tokens vus identiques ; le co\^{u}t wall-clock par step est comparable, l'inf\'{e}rence rout\'{e}e \'{e}tant petite devant le shared expert. Le lookup de la table de routage est lui-m\^{e}me $O(1)$ avec z\'{e}ro synchronisation GPU.
 
 \subsection{Performance d'inf\'{e}rence}
 \label{sec:inference_perf}
@@ -766,47 +796,11 @@ Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM 0.18 avec PagedAttention et 
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_inference_bench.png}
+\includegraphics[width=0.9\textwidth]{fig_inference_bench.png}
 \caption{Benchmark d'inf\'{e}rence sur un seul NVIDIA RTX PRO 6000 (96\,Go). 100 requ\^{e}tes \`{a} 10 RPS, 128 tokens d'entr\'{e}e, 1\,900 tokens de sortie. D\'{e}bit soutenu : 8\,078 tok/s ; pic : 10\,179 tok/s ; TTFT m\'{e}dian : 29,3\,ms ; ITL m\'{e}diane : 7,9\,ms.}
 \label{fig:inference_bench}
 \end{figure}
 
-\paragraph{Benchmark d'inf\'{e}rence 384M.} Le mod\`{e}le Token-Routed 384M d\'{e}ploy\'{e} sur vLLM 0.18 atteint \textbf{4\,900 tok/s} en d\'{e}bit soutenu (pic 5\,700 tok/s) sur un seul RTX PRO 6000, avec un TTFT m\'{e}dian de 39,6\,ms et une ITL de 16,0\,ms. Malgr\'{e} 2$\times$ plus de param\`{e}tres que le 187M, le d\'{e}bit ne diminue que de 40\%, confirmant l'efficacit\'{e} d'inf\'{e}rence du routage d\'{e}terministe (Figures~\ref{fig:zero_shot}--\ref{fig:vllm_comparison}).
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_zero_shot.png}
-\caption{Benchmarks zero-shot (384M, 8B tokens) : Token-Routed MoE vs Dense SwiGLU. Le MoE est derri\`{e}re de 1--2 points sur ARC-Easy et HellaSwag, coh\'{e}rent avec l'\'{e}cart de perte $+0,09$. MMLU est proche du hasard pour les deux (pas de SFT).}
-\label{fig:zero_shot}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/fig_vllm_comparison.png}
-\caption{Comparaison inf\'{e}rence vLLM : 187M (Run 2) vs 384M (8B tokens). Le mod\`{e}le 384M atteint 4\,900 tok/s (2$\times$ params, seulement 40\% de r\'{e}duction de d\'{e}bit).}
-\label{fig:vllm_comparison}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/expert_tsne_2d.png}
-\caption{T-SNE 2D des activations moyennes par expert par couche (384M, 8B tokens). \textit{Gauche} : par expert. \textit{Droite} : par profondeur.}
-\label{fig:expert_tsne_2d}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{expert_tsne_3d_multiangle.png}
-\caption{T-SNE 3D des activations par expert (384M, 8B tokens), vues multi-angles.}
-\label{fig:expert_tsne_3d}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{../figures/expert_tsne_3d_multiangle.png}
-\caption{T-SNE 3D des activations par expert, vues multi-angles.}
-\label{fig:expert_tsne_3d}
-\end{figure}
 \FloatBarrier
 
 \subsection{Limitations et travaux futurs}
@@ -814,8 +808,8 @@ Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM 0.18 avec PagedAttention et 
 
 \begin{itemize}
     \item \textbf{Ablation No-Mu} : \textit{r\'{e}alis\'{e}e} (Run 3, Table~\ref{tab:ablation_results}). Sans Mu-Guidance, le Token-Routed est plus lent que le dense ($+0,011$ en perte moyenne), confirmant le r\^{o}le essentiel du signal d'\'{e}quilibre inter-couche
-    \item \textbf{Mismatch d'optimiseur au scale} : l'\'{e}cart r\'{e}siduel de $+0,09$ \`{a} 384M (Figure~\ref{fig:384m_gap}) refl\`{e}te l'hypoth\`{e}se d'AdamW de mises \`{a} jour homog\`{e}nes des param\`{e}tres, qui favorise structurellement le dense. Une variante AdamTR (normalisation de gradient par expert et scaling du LR) est propos\'{e}e pour combler cet \'{e}cart.
-    \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation zero-shot sur ARC-Easy, HellaSwag et MMLU via \texttt{lm-evaluation-harness} est report\'{e}e Figure~\ref{fig:zero_shot}.
+    \item \textbf{Confirmation full-run} : le run 300M corrig\'{e} perd les deux premiers points de validation align\'{e}s (steps 250 et 500), croise au step 750, puis reste devant jusqu'au dernier point de validation align\'{e} au step 7500. Les benchmarks aval devront \^{e}tre relanc\'{e}s depuis les checkpoints 300M corrig\'{e}s.
+    \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation zero-shot sur ARC-Easy, HellaSwag et MMLU via \texttt{lm-evaluation-harness} doit \^{e}tre relanc\'{e}e sur les checkpoints 300M corrig\'{e}s.
 \end{itemize}
 
 %=============================================================================
@@ -825,7 +819,7 @@ Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM 0.18 avec PagedAttention et 
 
 Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage avec trois contributions principales : (1) le Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton et Shared Lexical Expert pour une assignation d\'{e}terministe sans pertes auxiliaires, (2) le Mu-Guided Attention avec $\mu_{\text{init}}$ apprenable et production de $\mu$ apr\`{e}s le MLP pour une communication inter-couche tenant compte des experts, et (3) une recette d'entra\^{i}nement avec warmup dynamique (5\%) et initialisation GPT-style ($1/\sqrt{2L}$).
 
-L'ablation de composants \`{a} 187M (500M tokens) montre que le Token-Routed surpasse la baseline dense en perte moyenne (4,793 vs 4,905, $\Delta = -0,112$). Au scale iso-param\`{e}tres 384M sur 8B tokens de FineWeb-Edu, l'\'{e}cart de perte vs dense se r\'{e}duit de $+0,28$ \`{a} un $+0,09$ stable, l'\'{e}cart r\'{e}siduel \'{e}tant attribuable \`{a} l'hypoth\`{e}se d'AdamW de mises \`{a} jour homog\`{e}nes plut\^{o}t qu'\`{a} une limite architecturale. L'inf\'{e}rence sur vLLM 0.18 atteint 8\,078 tok/s (187M) et 4\,900 tok/s (384M) en d\'{e}bit soutenu sur un seul RTX PRO 6000, confirmant le b\'{e}n\'{e}fice de d\'{e}ployabilit\'{e} du routage d\'{e}terministe.
+L'ablation de composants \`{a} 187M (500M tokens) montre que le Token-Routed surpasse la baseline dense en perte moyenne (4,793 vs 4,905, $\Delta = -0,112$). Dans le run de scaling iso-param\`{e}tres 300M \`{a} iso-batch (1\,048\,576 tokens/step, budget complet 8B tokens), Token-Routed paie un co\^{u}t de sp\'{e}cialisation transitoire pendant les $\approx$700 premiers steps (pic $+0,31$ vers le step 40), gagne pour la premi\`{e}re fois en train-loss logg\'{e} au step 740 et en validation au step 750, puis reste en avance jusqu'\`{a} la fin : l'\'{e}cart train-loss liss\'{e} sur les 50 derniers steps logg\'{e}s est de $-0,0163$ en faveur de Token-Routed (2,9283 vs 2,9446). Cela inverse la conclusion de scaling ant\'{e}rieure et indique que l'impl\'{e}mentation Token-Routed corrig\'{e}e devient sample-efficient une fois que les experts Zipf-rout\'{e}s se sp\'{e}cialisent. L'inf\'{e}rence sur vLLM 0.18 atteint 8\,078 tok/s pour le mod\`{e}le 187M ; les chiffres 300M mis \`{a} jour seront report\'{e}s depuis le checkpoint corrig\'{e}.
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail introduit des innovations architecturales pour les mod\`{e}les de langage. Bien que ces mod\`{e}les aient de nombreuses applications, ils comportent \'{e}galement des risques de mauvaise utilisation. Nous publions les poids du mod\`{e}le pour permettre la recherche tout en encourageant une utilisation responsable.

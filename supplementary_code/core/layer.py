@@ -12,8 +12,7 @@ Architecture (Pre-Norm, three phases per layer):
 mu from layer L is passed as mu_prev to layer L+1's attention, creating a
 cross-layer top-down signal (Section 3.3 of the paper).
 
-Note: there is NO PiD controller, NO velocity state, NO INLDynamics.
-Mu-Guidance is a simple learnable projection, not a dynamical system.
+Mu-Guidance is a simple learnable projection.
 """
 
 import torch
@@ -98,9 +97,16 @@ class TransformerBlock(nn.Module):
         num_experts: int = 4,
         vocab_size: int = 100_000,
         shared_expert: bool = True,
+        shared_intermediate_size: Optional[int] = None,
+        top_k: int = 1,
+        top_k_primary_weight: float = 0.95,
+        use_shared_routed_gates: bool = False,
+        shared_gate_init: float = 1.0,
+        routed_gate_init: float = 1.0,
         token_frequencies: Optional[torch.Tensor] = None,
         use_qk_norm: bool = True,
         use_mu_guidance: bool = True,
+        layer_idx: int = 0,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -116,6 +122,7 @@ class TransformerBlock(nn.Module):
             rope_theta=rope_theta,
             attention_dropout=attention_dropout,
             use_qk_norm=use_qk_norm,
+            use_mu_guidance=use_mu_guidance,
         )
 
         # --- 2. Pre-norm + MLP ---
@@ -127,7 +134,14 @@ class TransformerBlock(nn.Module):
                 num_experts=num_experts,
                 vocab_size=vocab_size,
                 shared_expert=shared_expert,
+                shared_intermediate_size=shared_intermediate_size,
+                top_k=top_k,
+                top_k_primary_weight=top_k_primary_weight,
+                use_shared_routed_gates=use_shared_routed_gates,
+                shared_gate_init=shared_gate_init,
+                routed_gate_init=routed_gate_init,
                 token_frequencies=token_frequencies,
+                layer_idx=layer_idx,
             )
         else:
             self.mlp = SwiGLU(hidden_size=hidden_size, intermediate_size=intermediate_size)

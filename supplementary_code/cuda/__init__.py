@@ -16,8 +16,7 @@ Available optimizations (when Triton is installed):
 - Fused Mu-QKV (mu-guided K/Q/V in a single kernel)
 
 Note: The ``pid`` variable used throughout these kernels refers to
-``tl.program_id()`` (Triton's thread-block index), not to any PiD
-controller or dynamical system.
+``tl.program_id()`` (Triton's thread-block index).
 """
 
 try:

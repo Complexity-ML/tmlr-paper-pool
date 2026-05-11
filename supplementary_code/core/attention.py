@@ -22,12 +22,23 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from contextlib import nullcontext
 from typing import Optional, Tuple
 
 from .rotary import RotaryEmbedding, apply_rotary_pos_emb
 
 # Check for SDPA (PyTorch 2.0+)
 HAS_SDPA = hasattr(F, "scaled_dot_product_attention")
+try:
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+    SDPA_KERNEL_BACKENDS = [
+        SDPBackend.FLASH_ATTENTION,
+        SDPBackend.EFFICIENT_ATTENTION,
+        SDPBackend.MATH,
+    ]
+except Exception:
+    sdpa_kernel = None
+    SDPA_KERNEL_BACKENDS = None
 
 
 class ComplexityAttention(nn.Module):
@@ -53,6 +64,7 @@ class ComplexityAttention(nn.Module):
         rope_theta: float = 10000.0,
         attention_dropout: float = 0.0,
         use_qk_norm: bool = True,
+        use_mu_guidance: bool = True,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -70,12 +82,14 @@ class ComplexityAttention(nn.Module):
         self.v_proj = nn.Linear(hidden_size, num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(num_attention_heads * self.head_dim, hidden_size, bias=False)
 
-        # --- Mu-Guidance projections (Eq. 5 in paper) ---
-        # mu from the previous layer biases K, Q, V:
-        #   K = x W_K + mu_prev W_muK
-        self.mu_to_q = nn.Linear(hidden_size, num_attention_heads * self.head_dim, bias=False)
-        self.mu_to_k = nn.Linear(hidden_size, num_key_value_heads * self.head_dim, bias=False)
-        self.mu_to_v = nn.Linear(hidden_size, num_key_value_heads * self.head_dim, bias=False)
+        # --- Mu-Guidance projections (Eq. 5 in paper). Only allocated when
+        #     Mu-Guidance is enabled, so disabled configs don't pay these
+        #     ~1.5M params per layer.
+        self.use_mu_guidance = bool(use_mu_guidance)
+        if self.use_mu_guidance:
+            self.mu_to_q = nn.Linear(hidden_size, num_attention_heads * self.head_dim, bias=False)
+            self.mu_to_k = nn.Linear(hidden_size, num_key_value_heads * self.head_dim, bias=False)
+            self.mu_to_v = nn.Linear(hidden_size, num_key_value_heads * self.head_dim, bias=False)
 
         # --- QK normalization ---
         self.use_qk_norm = use_qk_norm
@@ -115,9 +129,10 @@ class ComplexityAttention(nn.Module):
         B, S, _ = hidden_states.shape
 
         # --- Compute Q, K, V with optional mu bias ---
-        # Fused path: cat([x, mu]) @ cat([W, W_mu]) = x W + mu W_mu
-        # This halves the number of matmuls (3 instead of 6).
-        if mu_prev is not None:
+        # When Mu-Guidance is enabled and a mu_prev is provided, use the
+        # fused path: cat([x, mu]) @ cat([W, W_mu]) = x W + mu W_mu, which
+        # halves the number of matmuls (3 instead of 6).
+        if self.use_mu_guidance and mu_prev is not None:
             x_mu = torch.cat([hidden_states, mu_prev], dim=-1)       # [B, S, 2H]
             wq = torch.cat([self.q_proj.weight, self.mu_to_q.weight], dim=1)
             wk = torch.cat([self.k_proj.weight, self.mu_to_k.weight], dim=1)
@@ -167,12 +182,20 @@ class ComplexityAttention(nn.Module):
         # Attention (prefer SDPA / Flash Attention)
         if HAS_SDPA:
             dropout_p = self.attention_dropout if self.training else 0.0
-            attn_output = F.scaled_dot_product_attention(
-                q, k, v,
-                attn_mask=attention_mask,
-                dropout_p=dropout_p,
-                is_causal=(attention_mask is None),
+            # Exclude cuDNN SDPA: on large GQA shapes it can fail with
+            # "No valid execution plans built". Flash/Efficient/Math are stable.
+            sdpa_context = (
+                sdpa_kernel(SDPA_KERNEL_BACKENDS)
+                if sdpa_kernel is not None and SDPA_KERNEL_BACKENDS is not None
+                else nullcontext()
             )
+            with sdpa_context:
+                attn_output = F.scaled_dot_product_attention(
+                    q, k, v,
+                    attn_mask=attention_mask,
+                    dropout_p=dropout_p,
+                    is_causal=(attention_mask is None),
+                )
         else:
             attn_output = self._manual_attention(q, k, v, attention_mask, S, kv_seq_len)
 

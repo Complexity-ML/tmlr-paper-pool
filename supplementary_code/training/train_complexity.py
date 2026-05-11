@@ -13,7 +13,7 @@ Reference training recipe matching the paper:
 
 Usage:
     python train_complexity.py --size 150m --dataset roneneldan/TinyStories
-    python train_complexity.py --size 150m --data ./pretokenized_data --bf16
+    python train_complexity.py --size 300m_tr --data ./pretokenized_data --bf16
 """
 
 import os
@@ -227,6 +227,8 @@ SIZE_HYPERPARAMS = {
     "20m":   {"lr": 5e-4},
     "small": {"lr": 3e-4},
     "150m":  {"lr": 1e-4},
+    "300m_tr": {"lr": 3e-4},
+    "300m_dense": {"lr": 3e-4},
     "350m":  {"lr": 8e-5},
     "1b":    {"lr": 3e-5},
 }

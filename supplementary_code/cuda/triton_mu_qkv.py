@@ -13,7 +13,7 @@ This file is kept for:
 The concat approach achieves ~2x speedup using cuBLAS without custom kernels.
 Custom Triton kernels had too much launch overhead for these small ops.
 
-Author: Pacific Prime / INL 2025
+Author: Complexity-ML 2025
 """
 
 import torch
@@ -340,7 +340,7 @@ class FusedMuQKVProjection(nn.Module):
     Replaces separate q_proj, k_proj, v_proj, mu_to_q, mu_to_k, mu_to_v
     with a single fused operation.
 
-    INL 2025: ~2x speedup on attention QKV projection.
+    Reference fused projection path for attention QKV projection.
     """
 
     def __init__(

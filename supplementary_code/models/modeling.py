@@ -88,10 +88,17 @@ class ComplexityModel(nn.Module):
                 num_experts=config.num_experts,
                 vocab_size=config.vocab_size,
                 shared_expert=config.shared_expert,
+                shared_intermediate_size=config.shared_intermediate_size,
+                top_k=config.top_k,
+                top_k_primary_weight=config.top_k_primary_weight,
+                use_shared_routed_gates=config.use_shared_routed_gates,
+                shared_gate_init=config.shared_gate_init,
+                routed_gate_init=config.routed_gate_init,
                 use_qk_norm=config.use_qk_norm,
                 use_mu_guidance=config.use_mu_guidance,
+                layer_idx=layer_idx,
             )
-            for _ in range(config.num_hidden_layers)
+            for layer_idx in range(config.num_hidden_layers)
         ])
 
         # Final norm

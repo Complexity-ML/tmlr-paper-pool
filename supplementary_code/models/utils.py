@@ -11,6 +11,8 @@ SIZE_PRESETS = {
     "20m": ComplexityConfig.complexity_20m,
     "small": ComplexityConfig.complexity_small,
     "150m": ComplexityConfig.complexity_150m,
+    "300m_tr": ComplexityConfig.complexity_300m_tr,
+    "300m_dense": ComplexityConfig.complexity_300m_dense,
     "350m": ComplexityConfig.complexity_350m,
     "1b": ComplexityConfig.complexity_1b,
 }
@@ -25,7 +27,8 @@ def create_complexity_model(
     Create a Complexity model by size name.
 
     Args:
-        size:       one of "tiny", "20m", "small", "150m", "350m", "1b"
+        size:       one of "tiny", "20m", "small", "150m", "300m_tr",
+                    "300m_dense", "350m", "1b"
         vocab_size: vocabulary size
         **overrides: additional config overrides (e.g., use_mu_guidance=False)
 
