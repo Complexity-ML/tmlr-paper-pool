@@ -94,6 +94,7 @@ class ComplexityModel(nn.Module):
                 use_shared_routed_gates=config.use_shared_routed_gates,
                 shared_gate_init=config.shared_gate_init,
                 routed_gate_init=config.routed_gate_init,
+                token_frequencies=getattr(config, "token_frequencies", None),
                 use_qk_norm=config.use_qk_norm,
                 use_mu_guidance=config.use_mu_guidance,
                 layer_idx=layer_idx,

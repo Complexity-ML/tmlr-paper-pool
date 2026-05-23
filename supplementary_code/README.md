@@ -29,7 +29,8 @@ and finishes ahead at matched tokens seen.
 │   ├── fused_mlp.py            # Fused MLP kernels
 │   └── persistent_cggr.py      # Persistent CGGR optimization
 ├── training/
-│   └── train_complexity.py   # Training script
+│   ├── train_complexity.py   # Training script
+│   └── online_self_rl.py     # Importable inference-time self-RL module
 ├── evaluation/
 │   └── run_benchmarks.py     # Benchmark evaluation script
 └── configs/
@@ -68,6 +69,35 @@ The old dynamic-controller path is not part of the corrected architecture.
 ```bash
 python training/train_complexity.py --size 150m --dataset your_dataset
 ```
+
+### Inference-time full-model self-RL
+The framework includes an importable online module for serving-time
+self-reinforcement.  It is meant to be called by an inference server when the
+model hesitates, has high entropy / low confidence, or receives corrective user
+feedback.
+
+```python
+from supplementary_code.training.online_self_rl import (
+    OnlineSelfRLEngine,
+    OnlineSelfRLConfig,
+)
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-7)
+engine = OnlineSelfRLEngine(
+    model=model,
+    tokenizer=tokenizer,
+    optimizer=optimizer,
+    config=OnlineSelfRLConfig(entropy_trigger=5.0, confidence_trigger=0.20),
+)
+
+response, stats, episode = engine.infer_and_maybe_update(
+    "Explain why this code is failing.",
+    user_feedback="wrong",   # optional; also triggers on uncertainty
+)
+```
+
+The online engine updates the full model on the current inference episode when
+the model is uncertain or receives corrective feedback.
 
 Corrected 300M scaling commands used for the paper comparison from the
 `complexity-framework` training repo are mirrored in

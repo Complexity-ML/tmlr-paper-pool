@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-We present COMPLEXITY-DEEP, a language model architecture introducing three original contributions: (1) \textbf{Token-Routed MLP with Zipf-balanced routing via greedy bin-packing}, a deterministic per-token routing that distributes tokens to experts with perfect load balance (1.0000$\times$) via a greedy algorithm aware of frequencies~\citep{zipf1949human}, eliminating the learned router and auxiliary losses; (2) \textbf{Mu-Guided Attention}, where a latent state $\mu$ flows between layers to guide K, Q, and V projections after the MLP, capturing expert-specific information; and (3) \textbf{Shared Lexical Expert}, a dense MLP shared across all tokens that captures universal patterns (syntax, grammar) while routed experts specialize. We provide formal theoretical analysis proving capacity equivalence with dense models at $1/n$ compute cost. An initial 1.5B-parameter pilot model motivated an architectural simplification: an adaptive residual scaler, redundant with Adam's adaptive mechanisms, was removed. The evaluation includes component ablation at 187M scale (500M tokens) and a corrected iso-parameter scaling comparison at $\sim$300M (8B tokens FineWeb-Edu), where Token-Routed pays an early specialization cost, first beats dense at step 740 on logged train loss and step 750 on validation loss, and finishes the 8B-token budget with a smoothed train-loss advantage of $-0.0163$.
+We present COMPLEXITY-DEEP, a language model architecture built around deterministic lexical routing. The paper studies three components: (1) \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}, which assigns tokens to experts using an estimated corpus-frequency table, eliminating learned routers and auxiliary load-balancing losses; (2) \textbf{Shared Lexical Expert}, a dense MLP path shared by all tokens while routed experts specialize on lexical partitions; and (3) \textbf{Mu-Guided Attention}, where a latent state $\mu$ flows forward between adjacent layers to modulate K, Q, and V projections after the MLP. We give a formal analysis of the conditional capacity and compute trade-off induced by deterministic lexical partitions, and we explicitly distinguish vocabulary balance from corpus-frequency balance under Zipfian token distributions. Empirically, component ablations at 187M parameters (500M tokens) show that the full Token-Routed+Shared+Mu model improves average loss over a dense SwiGLU baseline. Our main scaling result is a corrected iso-parameter comparison at $\sim$300M parameters over 8B FineWeb-Edu tokens: a residual Token-Routed model without Mu-Guidance pays an early specialization cost, first beats the dense baseline at step 740 on logged train loss and step 750 on validation loss, and finishes the budget with a smoothed train-loss advantage of $-0.0163$.
 \end{abstract}
 
 %=============================================================================
@@ -61,10 +61,10 @@ Large Language Models (LLMs) have revolutionized natural language processing in 
     \item \textbf{Training instability}: Large models often suffer from numerical instabilities requiring careful hyperparameter tuning.
 \end{itemize}
 
-We propose COMPLEXITY-DEEP, an architecture that addresses the first two limitations through two innovations:
+We propose COMPLEXITY-DEEP, an architecture family that addresses the first two limitations through deterministic lexical routing and optional inter-layer guidance:
 
 \begin{enumerate}
-    \item \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}: A deterministic per-token routing that distributes tokens to experts by perfectly balancing the load via a greedy algorithm, eliminating both the learned router and auxiliary load-balancing losses.
+    \item \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}: A deterministic per-token routing that balances expected expert load under an estimated token-frequency distribution, eliminating both the learned router and auxiliary load-balancing losses.
     \item \textbf{Mu-Guided Attention}: A mechanism where the latent state $\mu$ computed at layer $l$ (after the MLP) flows forward to layer $l+1$, influencing its K, Q, and V projections. This creates an inter-layer communication channel that carries expert-specific context from one layer to the next.
 \end{enumerate}
 
@@ -118,7 +118,7 @@ Unlike traditional MoEs that use learned soft routing with load balancing, we pr
 \end{equation}
 where BinPack assigns each token $t$ (sorted by decreasing frequency) to the expert with the lowest current total load (Section~\ref{sec:zipf_routing}).
 
-This design choice is \textit{deliberate}: routing depends not on semantic content $\mathbf{x}$ but solely on the lexical token identifier. Each vocabulary token is \textit{pre-assigned} to a specific expert with perfect load balance (1.0000$\times$).
+This design choice is \textit{deliberate}: routing depends not on semantic content $\mathbf{x}$ but solely on the lexical token identifier. Each vocabulary token is \textit{pre-assigned} to a specific expert; the assignment is chosen to balance expected corpus frequency rather than merely the number of vocabulary entries.
 
 For each token, a single expert is activated, combined with the Shared Lexical Expert:
 \begin{equation}
@@ -135,8 +135,8 @@ Each expert is a standard MLP with SiLU activation (SwiGLU):
 \textbf{Why not semantic routing?} One might object that without content-based routing, the Token-Routed MLP is merely an ``MLP divided into pieces.'' This objection ignores two crucial points:
 
 \begin{enumerate}
-    \item \textbf{Functional specialization}: Despite lexical (non-semantic) routing, each expert achieves lower perplexity on its assigned token subset than the equivalent dense MLP on the same tokens (see Section~\ref{sec:expert_analysis}). This \textit{functional} specialization (measured by performance, not weight geometry) demonstrates that deterministic routing induces useful specialization without collapse.
-    \item \textbf{Perfect balance}: Modulo routing mathematically ensures each expert receives exactly $1/n_{experts}$ of tokens, eliminating the central MoE problem: cumulative imbalance.
+    \item \textbf{Functional specialization}: Despite lexical (non-semantic) routing, routed experts improve loss on their assigned token subsets relative to the matched dense baseline on the same subsets (see Section~\ref{sec:expert_analysis}). This \textit{functional} specialization (measured by performance, not weight geometry) demonstrates that deterministic routing can induce useful specialization without collapse.
+    \item \textbf{Frequency-aware balance}: Greedy bin-packing over empirical token frequencies avoids the severe runtime imbalance that modulo or round-robin routing can create under Zipf's law, without requiring an auxiliary load-balancing objective.
 \end{enumerate}
 
 \paragraph{Mechanism of specialization.} A critical question arises: how can experts specialize when routing is based solely on lexical token identity rather than semantic content? The key insight is that experts optimize for \textit{contextual distributions}, not token identities.
@@ -158,14 +158,14 @@ The gradient flow is:
 \nabla_{\mathbf{W}^{(i)}} \mathcal{L}_i = \mathbb{E}_{\mathbf{x} \sim \mathcal{C}_i}[\nabla_{\mathbf{W}^{(i)}} \ell(\text{Expert}_i(\mathbf{x}), y)]
 \end{equation}
 
-Since modulo routing ensures disjoint token sets ($T_i \cap T_j = \emptyset$), and natural language exhibits non-uniform token-context co-occurrence, the contextual distributions $\mathcal{C}_i$ and $\mathcal{C}_j$ are statistically distinct. This induces different gradient statistics, driving expert divergence (Theorem~\ref{thm:gradient_orthogonalization}).
+Since deterministic routing ensures disjoint token sets ($T_i \cap T_j = \emptyset$), and natural language exhibits non-uniform token-context co-occurrence, the contextual distributions $\mathcal{C}_i$ and $\mathcal{C}_j$ are statistically distinct. This induces different gradient statistics, driving expert divergence (Theorem~\ref{thm:gradient_orthogonalization}).
 
-\textbf{Empirical validation:} Section~\ref{sec:expert_analysis} measures functional specialization via per-expert perplexity: each expert achieves lower PPL on its assigned tokens than the dense MLP on the same tokens. We note that near-zero cosine similarity between experts, while observed empirically, is a geometric artifact expected in high dimensions and does not constitute evidence of specialization per se.
+\textbf{Empirical validation:} Section~\ref{sec:expert_analysis} measures functional specialization via per-expert perplexity on assigned token subsets, compared with the dense baseline on the same subsets. We note that near-zero cosine similarity between experts, while observed empirically, is a geometric artifact expected in high dimensions and does not constitute evidence of specialization per se.
 
 \textbf{Operational advantages:}
 \begin{itemize}
     \item No auxiliary load balancing loss (hyperparameter savings)
-    \item 100\% deterministic: perfect reproducibility, simplified debugging
+    \item Deterministic routing table: simplified debugging and no stochastic router decisions
     \item Trivial deployment: F32/BF16 tensors with I64 indexing, natively compatible with PyTorch, ONNX, TensorRT without custom routing logic
 \end{itemize}
 
@@ -230,12 +230,12 @@ The shared expert has the same intermediate size as one routed expert ($d_{ff}/n
 
 \subsubsection{Zipf-balanced Greedy Bin-Packing}
 
-Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy algorithm that achieves perfect 1.0000$\times$ load balance.
+Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy algorithm that balances expected corpus load under the estimated training distribution.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{expert_balance.png}
-\caption{Expert balance under Zipf bin-packing. The bin-packing balances the \textit{total load} (frequency) to 1.0000$\times$, not the number of tokens (which varies slightly around 25\%).}
+\caption{Expert balance under Zipf bin-packing. The bin-packing balances the estimated \textit{total load} (frequency), not the number of vocabulary entries assigned to each expert.}
 \label{fig:expert_balance}
 \end{figure}
 \FloatBarrier
@@ -273,9 +273,9 @@ Based on this evidence, the adaptive scaler was removed from the architecture. T
 
 We provide formal theoretical grounding for the Token-Routed MLP architecture, establishing its relationship to dense models and proving key properties.
 
-\subsection{Perfect Load Balance}
+\subsection{Vocabulary and Frequency Balance}
 
-\begin{theorem}[Perfect Load Balance]
+\begin{theorem}[Vocabulary Balance for Modulo Routing]
 \label{thm:perfect_balance}
 Let $V$ be a vocabulary of size $|V|$ and $n$ the number of experts. Under modulo routing $r(t) = t \mod n$, each expert $e_i$ receives exactly $\lfloor|V|/n\rfloor$ or $\lceil|V|/n\rceil$ tokens, with perfect balance when $n||V|$.
 \end{theorem}
@@ -290,38 +290,32 @@ The cardinality $|T_i| = \lfloor(|V|-i-1)/n\rfloor+1$. When $n$ divides $|V|$, w
 In our implementation, $|V| = 32000$ and $n = 4$, giving $|T_i| = 8000$ tokens per expert.
 \end{proof}
 
-\subsection{Capacity Equivalence with Dense Models}
+\begin{remark}[Zipfian corpus balance]
+Vocabulary-cardinality balance is not sufficient for runtime load balance because token frequencies are highly non-uniform. In the experiments we therefore use the greedy bin-packing assignment of Section~\ref{sec:zipf_routing}: tokens are sorted by empirical frequency and assigned to the currently lightest expert. This produces a deterministic routing table with balanced \emph{expected} corpus load under the estimated training distribution; the realised per-batch load can still vary with sampling noise and distribution shift.
+\end{remark}
 
-\begin{theorem}[Capacity-Compute Trade-off]
+\subsection{Conditional Capacity and Compute}
+
+\begin{proposition}[Partitioned Capacity-Compute Trade-off]
 \label{thm:capacity}
 A Token-Routed MLP with $n$ experts, each of intermediate dimension $d_{ff}$, has:
 \begin{enumerate}
     \item Total parameter count: $P_{total} = n \cdot P_{expert}$ where $P_{expert} = 3 \cdot d_{model} \cdot d_{ff}$ (for SwiGLU)
     \item Active parameters per token: $P_{active} = P_{expert} = P_{total}/n$
-    \item Representational capacity equivalent to a dense MLP with $n \cdot d_{ff}$ intermediate dimension
+    \item Conditional capacity equal to a collection of $n$ token-conditioned MLPs, one per lexical partition
 \end{enumerate}
-\end{theorem}
+\end{proposition}
 
-\begin{proof}
-(1) and (2) follow directly from the architecture definition. For (3), consider the union of expert weight matrices. Let $\mathbf{W}^{(i)}_{gate}, \mathbf{W}^{(i)}_{up}, \mathbf{W}^{(i)}_{down}$ be the weights of expert $i$. Define the concatenated matrices:
-\begin{align}
-\mathbf{W}^{concat}_{gate} &= [\mathbf{W}^{(0)}_{gate}; \ldots; \mathbf{W}^{(n-1)}_{gate}] \in \mathbb{R}^{d_{model} \times (n \cdot d_{ff})} \\
-\mathbf{W}^{concat}_{up} &= [\mathbf{W}^{(0)}_{up}; \ldots; \mathbf{W}^{(n-1)}_{up}] \in \mathbb{R}^{d_{model} \times (n \cdot d_{ff})}
-\end{align}
-
-The function class representable by Token-Routed MLP over the vocabulary is:
+\begin{proof}[Proof sketch]
+(1) and (2) follow directly from the architecture definition. For (3), the routed layer represents a family of functions indexed by the deterministic routing table:
 \begin{equation}
 \mathcal{F}_{TR} = \bigcup_{i=0}^{n-1} \{f_i : \mathbb{R}^{d_{model}} \to \mathbb{R}^{d_{model}}\}
 \end{equation}
-where each $f_i$ is a SwiGLU MLP. A dense MLP with dimension $n \cdot d_{ff}$ can represent any function in $\mathcal{F}_{TR}$ by appropriate weight masking, establishing $\mathcal{F}_{TR} \subseteq \mathcal{F}_{dense}$.
-
-Conversely, $\mathcal{F}_{dense} \subseteq \mathcal{F}_{TR}$: any dense MLP $f_{dense}$ with intermediate dimension $n \cdot d_{ff}$ can be exactly reproduced by setting all $n$ expert weight matrices to the same value $\mathbf{W}^{(i)} = \mathbf{W}_{dense}[:, id_{ff}:(i+1)d_{ff}]$ for the gate/up projections. Since each token activates exactly one expert, and the experts collectively cover the full $n \cdot d_{ff}$ space via the union over the vocabulary, $\mathcal{F}_{TR} = \mathcal{F}_{dense}$.
-
-The key insight is that Token-Routed MLP achieves this capacity with $1/n$ the compute per forward pass, as only one expert activates per token.
+where each $f_i$ is a SwiGLU MLP applied only to tokens assigned to expert $i$. Thus the architecture trades a single shared dense function for a deterministic token-conditioned family of narrower functions. It should not be interpreted as exact functional equivalence to an arbitrary dense MLP for every token; the comparison is a conditional capacity and compute trade-off.
 \end{proof}
 
 \begin{corollary}[Compute Efficiency]
-For a sequence of $L$ tokens, Token-Routed MLP requires $L \cdot P_{expert}$ FLOPs while a capacity-equivalent dense MLP requires $L \cdot n \cdot P_{expert}$ FLOPs. The compute reduction factor is exactly $n$.
+For a sequence of $L$ tokens, top-1 Token-Routed MLP requires $L \cdot P_{expert}$ MLP-parameter applications while a dense MLP with the same total expert width would require $L \cdot n \cdot P_{expert}$. In the residual top-$k=2$ 300M model used for scaling, the active routed branch uses two small experts plus a large shared branch; we therefore report matched-token empirical quality and measured throughput rather than claiming an ideal $n\times$ end-to-end speedup.
 \end{corollary}
 
 \subsection{Expert Divergence Under Gradient Descent}
@@ -335,7 +329,7 @@ Let $\mathbf{W}^{(i)}$ and $\mathbf{W}^{(j)}$ be the weight matrices of experts 
 \begin{equation}
 \mathbb{E}[\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)})] \to 0 \quad \text{as } t \to \infty
 \end{equation}
-provided the token sets $T_i$ and $T_j$ are disjoint (guaranteed by modulo routing).
+provided the token sets $T_i$ and $T_j$ are disjoint (guaranteed by deterministic lexical routing).
 \end{theorem}
 
 \begin{proof}[Proof Sketch]
@@ -352,17 +346,17 @@ Since $T_i \cap T_j = \emptyset$ by construction, the gradients $\nabla_{\mathbf
 Starting from random initialization with $\mathbb{E}[\cos(\mathbf{W}^{(i)}_0, \mathbf{W}^{(j)}_0)] \approx 0$ (for high-dimensional weights), the orthogonality is preserved throughout training. Our empirical measurements confirm $\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)}) \approx 0$ across all expert pairs and layers (Section~\ref{sec:token_routing_analysis}).
 \end{proof}
 
-\subsection{Mu-Guidance as Predictive Coding}
+\subsection{Mu-Guidance as Forward Context Modulation}
 
 The Mu-Guided Attention mechanism can be interpreted through the lens of predictive coding \citep{rao1999predictive}, a theory of cortical computation.
 
-\begin{proposition}[Top-Down Modulation]
-The $\mu$-guidance mechanism implements a form of predictive modulation where higher-layer context influences lower-layer processing:
+\begin{proposition}[Forward Context Modulation]
+The $\mu$-guidance mechanism implements a form of predictive modulation where the previous layer's post-MLP context influences the next layer's attention projections:
 \begin{equation}
-\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{top\text{-}down\ signal}
+\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{\text{forward context}}
 \end{equation}
 
-This is analogous to the predictive coding update:
+This is related in spirit to predictive-coding updates, although the information flow in our architecture is feed-forward across adjacent layers rather than feedback from higher layers to lower layers:
 \begin{equation}
 r^{(l)} = f(U^{(l)}r^{(l-1)} + W^{(l)}\epsilon^{(l+1)})
 \end{equation}
@@ -426,17 +420,17 @@ For a sequence of length $S$, model dimension $d$, intermediate dimension $d_{ff
 \mathcal{O}_{dense} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot d_{ff}}_{MLP}\right)
 \end{equation}
 
-\textbf{COMPLEXITY-DEEP (Token-Routed MLP + Mu-Guidance):}
+\textbf{COMPLEXITY-DEEP (top-1 Token-Routed MLP + Mu-Guidance):}
 \begin{equation}
 \mathcal{O}_{ours} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot \frac{d_{ff}}{n}}_{Token\text{-}Routed\ MLP} + \underbrace{S \cdot d}_{\mu\text{-}update}\right)
 \end{equation}
 
-The MLP compute reduction factor is exactly $n$, while the $\mu$-guidance overhead is $\mathcal{O}(S \cdot d)$, which is negligible compared to attention for $S > d$.
+The idealized top-1 routed branch reduces routed-MLP compute by a factor of $n$. Architectures with a shared expert or top-$k>1$ routing, including our 300M scaling model, have a different active-compute profile; their realised throughput is measured empirically in Section~\ref{sec:scaling_300m}.
 \end{theorem}
 
 \begin{table}[h]
 \centering
-\caption{Complexity comparison. Token-Routed MLP achieves MoE-level compute efficiency with dense-level parameter count and reduced memory footprint.}
+\caption{Idealized complexity comparison for a top-1 Token-Routed MLP branch. Shared-expert and top-$k$ variants trade part of this theoretical compute reduction for additional capacity.}
 \label{tab:complexity}
 \begin{tabular}{lccc}
 \toprule
@@ -478,14 +472,14 @@ The total approximation error of COMPLEXITY-DEEP decomposes as:
 where:
 \begin{itemize}
     \item $\mathcal{E}_{attn}$: error from finite attention context
-    \item $\mathcal{E}_{routing} = 0$ for Token-Routed MLP (deterministic routing eliminates expert selection error)
+    \item $\mathcal{E}_{routing}$: error induced by committing each token to a fixed lexical partition rather than choosing experts from the current hidden state
     \item $\mathcal{E}_{expert}$: approximation error within each expert, bounded by expert capacity
     \item $\mathcal{E}_{\mu} \leq \alpha^L \|\mu^{(0)}\|_2$: error from $\mu$-state initialization (vanishes exponentially)
 \end{itemize}
 \end{proposition}
 
-\begin{remark}[Advantage over Stochastic MoE]
-In standard Mixture-of-Experts with learned gating, $\mathcal{E}_{routing}$ is non-zero and depends on gating accuracy. Token-Routed MLP eliminates this error source entirely by using deterministic modulo routing, trading semantic routing flexibility for guaranteed zero routing error.
+\begin{remark}[Trade-off with stochastic MoE]
+In standard Mixture-of-Experts with learned gating, routing quality depends on the learned router and its auxiliary losses. Token-Routed MLP removes router learning and load-balancing losses, but it also gives up content-adaptive expert selection. The empirical question is whether lexical partitions plus a shared expert provide enough conditional specialization to offset this restriction.
 \end{remark}
 
 %=============================================================================
@@ -604,7 +598,7 @@ The original modulo routing ($\text{expert}(t) = t \bmod n$) distributes the \te
 \begin{equation}
     \text{expert}(t) = \arg\min_{e} \sum_{t' \in T_e} \text{freq}(t'), \quad \text{for } t \text{ in descending frequency order}
 \end{equation}
-where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-robin (which leaves up to 38\% imbalance), greedy bin-packing achieves \textbf{perfect 1.0000$\times$ load balance} across all experts. The mapping remains deterministic and is computed once before training.
+where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-robin (which can leave large Zipf-induced imbalances), greedy bin-packing balances the expected load under the frequency estimate used to construct the table. The mapping remains deterministic and is computed once before training; realised per-batch and final-run utilization can deviate from exactly 25\% because the training stream is finite and non-stationary.
 
 %=============================================================================
 \section{Discussion}
@@ -619,12 +613,12 @@ where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-ro
 \label{tab:arch_comparison}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Architecture} & \textbf{Top-down} & \textbf{Routing} & \textbf{Load Balancing} \\
+\textbf{Architecture} & \textbf{Inter-layer signal} & \textbf{Routing} & \textbf{Load balancing loss} \\
 \midrule
 Transformer & No & No & N/A \\
 Switch Transformer & No & Soft & Required \\
 Mixtral & No & Top-2 & Required \\
-\textbf{COMPLEXITY-DEEP} & \textbf{Yes ($\mu$)} & \textbf{Hard} & \textbf{Not required} \\
+\textbf{COMPLEXITY-DEEP} & \textbf{Forward $\mu$} & \textbf{Hard lexical} & \textbf{Not used} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -640,11 +634,11 @@ Mixtral & No & Top-2 & Required \\
 \subsection{Token-Routing Analysis}
 \label{sec:token_routing_analysis}
 
-One might fear that deterministic routing (without load balancing loss) leads to expert imbalance. Our analysis of the checkpoint after 1M steps demonstrates the opposite:
+One might fear that deterministic routing (without load balancing loss) leads to expert imbalance. Our analysis indicates that Zipf-balanced routing keeps all experts active:
 
 \begin{itemize}
-    \item \textbf{Perfect distribution}: Each expert processes exactly 25\% of tokens (8000/32000)
-    \item \textbf{Balanced norms}: Coefficient of variation of norms = 0.0000 (identically weighted experts)
+    \item \textbf{Near-balanced utilization}: In the 300M run, final observed expert utilization is 0.2481/0.2635/0.2481/0.2403, with no dead experts.
+    \item \textbf{Balanced norms}: Expert norms remain close across routed branches.
     \item \textbf{No collapse}: All 4 experts remain differentiated (inter-expert difference $\sim$0.022)
 \end{itemize}
 
@@ -658,7 +652,7 @@ One might fear that deterministic routing (without load balancing loss) leads to
 \toprule
 \textbf{Criterion} & \textbf{Token-Routed} & \textbf{Standard MoE} & \textbf{Advantage} \\
 \midrule
-Expert balance & Bin-packing (1.0000$\times$) & Aux. loss required & Token-Routed \\
+Expert balance & Frequency bin-packing & Aux. loss required & Token-Routed \\
 Specialization & Functional (PPL/expert) & Learned (softmax) & Depends \\
 Deployment & No gating network & Gating + dispatch & Token-Routed \\
 Determinism & 100\% & No (softmax) & Token-Routed \\
@@ -705,7 +699,7 @@ Run 4: Mixtral (learned router, top-1)   & 187M & 4.843 & $-0.062$ \\
 \end{tabular}
 \end{table}
 
-The full model (Run 2) converges significantly faster than both the dense baseline ($-0.112$) and the Mixtral-style MoE ($-0.050$). Deterministic routing outperforms the learned router in sample efficiency: experts specialize from the first step, without a router learning phase. Without Mu-Guidance (Run 3), Token-Routed is slower than dense ($+0.011$), confirming that the inter-layer equilibrium signal is the key component.
+At this proxy scale, the full model (Run 2) converges faster than both the dense baseline ($-0.112$) and the Mixtral-style MoE ($-0.050$). The no-Mu ablation (Run 3) is slightly slower than dense at 187M ($+0.011$ average loss), suggesting that Mu-Guidance helps this particular small-scale configuration. This conclusion does not automatically transfer to the 300M scaling run, where the strongest matched-budget result is obtained by a residual Token-Routed variant without Mu-Guidance.
 
 \begin{figure}[!htbp]
 \centering
@@ -766,9 +760,11 @@ The two runs start from comparable random-init loss (TR 10.58, dense 10.54) and 
 
 \begin{table}[!htbp]
 \centering
+\small
+\setlength{\tabcolsep}{4pt}
 \caption{300M scaling comparison at iso-batch (1,048,576 tokens/step), full 8B-token run. Train loss is reported at matched step. Negative gap indicates Token-Routed ahead. Last row is the smoothed mean of the final 50 logged steps.}
 \label{tab:scaling_300m_result}
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccc}
 \toprule
 \textbf{Step} & \textbf{Tokens seen} & \textbf{Dense (306.5M)} & \textbf{TR (306.5M, k=2)} & \textbf{Gap (TR $-$ Dense)} \\
 \midrule
@@ -788,7 +784,7 @@ last 50 (smoothed) & --- & 2.9446 & \textbf{2.9283} & $\mathbf{-0.016}$ \\
 
 \FloatBarrier
 
-\paragraph{Training throughput.} The Token-Routed model's active compute per token is $2 \times d_{ff}/n$ (one routed expert plus shared expert) vs $d_{ff}$ for dense. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen; wall-clock cost per step is comparable since the active routed compute is small relative to the shared expert. The routing table lookup itself is $O(1)$ with zero GPU synchronization.
+\paragraph{Training throughput.} The 300M Token-Routed model uses a large shared branch plus a small top-$k=2$ routed branch, so it is not intended as a pure top-1 speed benchmark. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen. The routing table lookup itself is $O(1)$ and does not require learned-router synchronization.
 
 \subsection{Inference Performance}
 \label{sec:inference_perf}
@@ -808,8 +804,9 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 \label{sec:limitations}
 
 \begin{itemize}
-    \item \textbf{No-Mu ablation}: \textit{completed} (Run 3, Table~\ref{tab:ablation_results}). Without Mu-Guidance, Token-Routed is slower than dense ($+0.011$ in average loss), confirming the essential role of the inter-layer equilibrium signal.
-    \item \textbf{Full-run confirmation}: The corrected 300M run loses the first two matched validation points (steps 250 and 500), crosses over at step 750, and remains ahead through the final matched validation point at step 7500. Downstream benchmarks should be rerun from the corrected 300M checkpoints.
+    \item \textbf{Single-seed scaling result}: The corrected 300M run is a full 8B-token matched-budget comparison, but it is still a single seed per architecture. Additional seeds would quantify whether the final $-0.0163$ smoothed gap is robust to initialization variance.
+    \item \textbf{Mu-Guidance at scale}: The 187M ablation supports Mu-Guidance, but the corrected 300M scaling win uses a residual Token-Routed model without Mu-Guidance. A full 300M Mu-guided run remains future work.
+    \item \textbf{Distribution-specific routing table}: Zipf bin-packing uses an empirical frequency estimate from the training distribution. Domain shifts can change realised expert utilization and should be measured when transferring the routing table.
     \item \textbf{Standardized benchmarks}: Zero-shot evaluation on ARC-Easy, HellaSwag, and MMLU via \texttt{lm-evaluation-harness} should be rerun on the corrected 300M checkpoints.
 \end{itemize}
 
@@ -820,7 +817,7 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 
 We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware inter-layer communication, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
 
-Component ablation at 187M (500M tokens) shows Token-Routed outperforming the dense baseline in average loss (4.793 vs 4.905, $\Delta = -0.112$). In the corrected iso-parameter 300M scaling run at iso-batch (1,048,576 tokens/step, full 8B-token budget), Token-Routed pays a transient specialization cost during the first $\approx$700 steps (peak gap $+0.31$ near step 40), first wins on logged train loss at step 740 and on validation loss at step 750, then stays ahead until the end: the smoothed final train-loss gap over the last 50 logged steps is $-0.0163$ in favor of Token-Routed (2.9283 vs 2.9446). This reverses the earlier scaling conclusion and indicates that the corrected Token-Routed implementation becomes sample-efficient once Zipf-routed experts specialize. Inference on vLLM 0.18 reaches 8,078 tok/s for the 187M model, confirming the deployability benefit of deterministic routing; updated 300M inference numbers will be reported from the corrected checkpoint.
+Component ablation at 187M (500M tokens) shows the full Token-Routed+Shared+Mu configuration outperforming the dense baseline in average loss (4.793 vs 4.905, $\Delta = -0.112$). In the corrected iso-parameter 300M scaling run at iso-batch (1,048,576 tokens/step, full 8B-token budget), the residual Token-Routed no-Mu variant pays a transient specialization cost during the first $\approx$700 steps (peak gap $+0.31$ near step 40), first wins on logged train loss at step 740 and on validation loss at step 750, then stays ahead until the end: the smoothed final train-loss gap over the last 50 logged steps is $-0.0163$ in favor of Token-Routed (2.9283 vs 2.9446). These results support deterministic lexical routing as a viable alternative to learned MoE routing at matched parameter count, while leaving multi-seed scaling and full Mu-guided scaling as important next steps. Inference on vLLM 0.18 reaches 8,078 tok/s for the 187M model, confirming the deployability benefit of deterministic routing; updated 300M inference numbers will be reported from the corrected checkpoint.
 
 \subsubsection*{Broader Impact Statement}
 This work introduces architectural innovations for language models. While these models have broad applications, they also carry risks of misuse. We release the model weights to enable research while encouraging responsible use.

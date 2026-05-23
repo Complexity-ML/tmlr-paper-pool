@@ -17,21 +17,23 @@ import logging
 import math
 import os
 import shutil
+import sys
 import time
+from importlib import import_module
 from pathlib import Path
 
 import torch
 import torch.distributed as dist
-import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 
-from complexity.config import ModelConfig
-from complexity.core.losses import causal_lm_loss
-from complexity.models import ComplexityModel
-from complexity.tokenizer import Tokenizer
-from complexity.utils import autocast, autocast_dtype, empty_cache, setup_mps, synchronize
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from supplementary_code.core.losses import causal_lm_loss
+from supplementary_code.models import ComplexityConfig, ComplexityModel
+from supplementary_code.tokenizer import Tokenizer
+from supplementary_code.utils import autocast, autocast_dtype, empty_cache, setup_mps, synchronize
 
 
 logging.basicConfig(
@@ -44,8 +46,8 @@ for noisy_logger in ("httpx", "httpcore", "huggingface_hub", "datasets"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
-def make_config() -> ModelConfig:
-    return ModelConfig(
+def make_config() -> ComplexityConfig:
+    return ComplexityConfig(
         hidden_size=1024,
         num_hidden_layers=18,
         num_attention_heads=16,
@@ -53,11 +55,9 @@ def make_config() -> ModelConfig:
         intermediate_size=4096,
         vocab_size=32000,
         max_position_embeddings=2048,
-        attention_type="gqa",
-        mlp_type="swiglu",
+        use_token_routed_mlp=False,
         num_experts=1,
         shared_expert=False,
-        norm_type="rmsnorm",
         use_qk_norm=True,
         use_mu_guidance=False,
     )
@@ -95,7 +95,7 @@ class LocalTextDataset(IterableDataset):
 
 class FineWebDataset(IterableDataset):
     def __init__(self, tokenizer, seq_len: int, rank: int, world_size: int):
-        from datasets import load_dataset
+        load_dataset = import_module("datasets").load_dataset
 
         self.tokenizer = tokenizer
         self.seq_len = seq_len
@@ -151,8 +151,7 @@ def evaluate(model, raw_model, loader, device, amp_dtype, eval_batches, label_sm
         input_ids = batch["input_ids"].to(device, non_blocking=True)
         labels = batch["labels"].to(device, non_blocking=True)
         with autocast(device, dtype=amp_dtype, enabled=amp_dtype is not None):
-            outputs = model(input_ids, return_logits=False)
-            logits = F.linear(outputs["last_hidden_state"], raw_model.embed_tokens.weight)
+            logits = model(input_ids).logits
             _, metrics = causal_lm_loss(
                 logits,
                 labels,
@@ -393,8 +392,7 @@ def main():
         labels = batch["labels"].to(device, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
         with autocast(device, dtype=amp_dtype, enabled=amp_dtype is not None):
-            outputs = model(input_ids, return_logits=False)
-            logits = F.linear(outputs["last_hidden_state"], raw_model.embed_tokens.weight)
+            logits = model(input_ids).logits
             loss, metrics = causal_lm_loss(
                 logits,
                 labels,

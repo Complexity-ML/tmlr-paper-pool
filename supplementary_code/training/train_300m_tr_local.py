@@ -19,22 +19,24 @@ import logging
 import math
 import os
 import shutil
+import sys
 import time
+from importlib import import_module
 from pathlib import Path
 
 import torch
 import torch.distributed as dist
-import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 
-from complexity.config import ModelConfig
-from complexity.core.losses import causal_lm_loss
-from complexity.models import ComplexityModel
-from complexity.tokenizer import Tokenizer
-from complexity.training import global_expert_shares
-from complexity.utils import autocast, autocast_dtype, empty_cache, setup_mps, synchronize
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from supplementary_code.core.losses import causal_lm_loss
+from supplementary_code.models import ComplexityConfig, ComplexityModel
+from supplementary_code.tokenizer import Tokenizer
+from supplementary_code.training import global_expert_shares
+from supplementary_code.utils import autocast, autocast_dtype, empty_cache, setup_mps, synchronize
 
 
 logging.basicConfig(
@@ -48,8 +50,8 @@ for noisy_logger in ("httpx", "httpcore", "huggingface_hub", "datasets"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 
-def make_config(args) -> ModelConfig:
-    return ModelConfig(
+def make_config(args) -> ComplexityConfig:
+    return ComplexityConfig(
         hidden_size=1024,
         num_hidden_layers=18,
         num_attention_heads=16,
@@ -57,12 +59,10 @@ def make_config(args) -> ModelConfig:
         intermediate_size=args.intermediate_size,
         vocab_size=32000,
         max_position_embeddings=2048,
-        attention_type="gqa",
-        mlp_type="token_routed",
+        use_token_routed_mlp=True,
         num_experts=4,
         shared_expert=True,
         shared_intermediate_size=args.shared_intermediate_size,
-        norm_type="rmsnorm",
         use_qk_norm=True,
         use_mu_guidance=args.use_mu_guidance,
         use_shared_routed_gates=args.learn_shared_routed_gates,
@@ -70,12 +70,6 @@ def make_config(args) -> ModelConfig:
         routed_gate_init=args.routed_gate_init,
         top_k=args.top_k,
         top_k_primary_weight=args.top_k_primary_weight,
-        clamp_mu_contextual=args.mu_clamp,
-        use_mu_norm=args.mu_norm,
-        mu_alpha_init=args.mu_alpha_init,
-        mu_init_value=args.mu_init_value,
-        mu_context_min=args.mu_context_min,
-        mu_context_max=args.mu_context_max,
     )
 
 
@@ -111,7 +105,7 @@ class LocalTextDataset(IterableDataset):
 
 class FineWebDataset(IterableDataset):
     def __init__(self, tokenizer, seq_len: int, rank: int, world_size: int):
-        from datasets import load_dataset
+        load_dataset = import_module("datasets").load_dataset
 
         self.tokenizer = tokenizer
         self.seq_len = seq_len
@@ -181,8 +175,7 @@ def evaluate(model, raw_model, loader, device, amp_dtype, eval_batches, label_sm
         input_ids = batch["input_ids"].to(device, non_blocking=True)
         labels = batch["labels"].to(device, non_blocking=True)
         with autocast(device, dtype=amp_dtype, enabled=amp_dtype is not None):
-            outputs = model(input_ids, return_logits=False)
-            logits = F.linear(outputs["last_hidden_state"], raw_model.embed_tokens.weight)
+            logits = model(input_ids).logits
             _, metrics = causal_lm_loss(
                 logits,
                 labels,
@@ -470,8 +463,7 @@ def main():
         labels = batch["labels"].to(device, non_blocking=True)
         optimizer.zero_grad(set_to_none=True)
         with autocast(device, dtype=amp_dtype, enabled=amp_dtype is not None):
-            outputs = model(input_ids, return_logits=False)
-            logits = F.linear(outputs["last_hidden_state"], raw_model.embed_tokens.weight)
+            logits = model(input_ids).logits
             loss, metrics = causal_lm_loss(
                 logits,
                 labels,

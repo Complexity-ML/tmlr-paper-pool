@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage introduisant trois contributions originales : (1) \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton}, un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge (1.0000$\times$) via un algorithme glouton tenant compte des fr\'{e}quences~\citep{zipf1949human}, \'{e}liminant le routeur appris et les pertes auxiliaires ; (2) \textbf{Mu-Guided Attention}, o\`{u} un \'{e}tat latent $\mu$ circule entre les couches pour guider les projections K, Q et V apr\`{e}s le MLP, capturant l'information sp\'{e}cifique \`{a} chaque expert ; et (3) \textbf{Shared Lexical Expert}, un MLP dense partag\'{e} par tous les tokens qui capture les patterns universels (syntaxe, grammaire) tandis que les experts rout\'{e}s se sp\'{e}cialisent. Nous fournissons une analyse th\'{e}orique formelle prouvant l'\'{e}quivalence de capacit\'{e} avec les mod\`{e}les denses \`{a} un co\^{u}t de calcul de $1/n$. Un mod\`{e}le pilote initial de 1,5B param\`{e}tres a motiv\'{e} une simplification de l'architecture : un scaler r\'{e}siduel adaptatif, redondant avec les m\'{e}canismes adaptatifs d'Adam, a \'{e}t\'{e} retir\'{e}. L'\'{e}valuation comprend une ablation de composants \`{a} l'\'{e}chelle 187M (500M tokens) et une comparaison iso-param\`{e}tres corrig\'{e}e \`{a} $\sim$300M (8B tokens FineWeb-Edu), o\`{u} Token-Routed paie un co\^{u}t de sp\'{e}cialisation initial, bat dense pour la premi\`{e}re fois au step 740 en train-loss logg\'{e} et au step 750 en validation, et termine le budget 8B tokens avec un avantage liss\'{e} de $-0,0163$ en train-loss.
+Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage construite autour d'un routage lexical d\'{e}terministe. L'article \'{e}tudie trois composants : (1) \textbf{Token-Routed MLP avec bin-packing glouton Zipf-balanced}, qui assigne les tokens aux experts \`{a} partir d'une table de fr\'{e}quences estim\'{e}e sur le corpus, sans routeur appris ni perte auxiliaire d'\'{e}quilibrage ; (2) \textbf{Shared Lexical Expert}, un chemin MLP dense partag\'{e} par tous les tokens tandis que les experts rout\'{e}s se sp\'{e}cialisent sur des partitions lexicales ; et (3) \textbf{Mu-Guided Attention}, o\`{u} un \'{e}tat latent $\mu$ circule vers l'avant entre couches adjacentes pour moduler les projections K, Q et V apr\`{e}s le MLP. Nous analysons le compromis entre capacit\'{e} conditionnelle et calcul induit par ces partitions lexicales, en distinguant explicitement l'\'{e}quilibre du vocabulaire de l'\'{e}quilibre de charge sous des distributions Zipfiennes. Empiriquement, des ablations \`{a} 187M param\`{e}tres (500M tokens) montrent que le mod\`{e}le complet Token-Routed+Shared+Mu am\'{e}liore la perte moyenne par rapport \`{a} une baseline dense SwiGLU. Le r\'{e}sultat principal de scaling est une comparaison iso-param\`{e}tres corrig\'{e}e \`{a} $\sim$300M sur 8B tokens FineWeb-Edu : un mod\`{e}le Token-Routed r\'{e}siduel sans Mu-Guidance paie un co\^{u}t initial de sp\'{e}cialisation, bat la baseline dense au step 740 en train-loss logg\'{e} et au step 750 en validation, puis termine le budget avec un avantage liss\'{e} de $-0,0163$ en train-loss.
 \end{abstract}
 
 %=============================================================================
@@ -61,10 +61,10 @@ Les grands mod\`{e}les de langage (LLM) ont r\'{e}volutionn\'{e} le traitement d
     \item \textbf{Instabilit\'{e} de l'entra\^{i}nement} : les grands mod\`{e}les souffrent souvent d'instabilit\'{e}s num\'{e}riques n\'{e}cessitant un r\'{e}glage minutieux des hyperparaml\`{e}tres.
 \end{itemize}
 
-Nous proposons COMPLEXITY-DEEP, une architecture qui r\'{e}pond aux deux premi\`{e}res limitations \`{a} travers deux innovations :
+Nous proposons COMPLEXITY-DEEP, une famille d'architectures qui r\'{e}pond aux deux premi\`{e}res limitations par un routage lexical d\'{e}terministe et un guidage inter-couche optionnel :
 
 \begin{enumerate}
-    \item \textbf{Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton} : un routage d\'{e}terministe par token qui distribue les tokens aux experts en \'{e}quilibrant parfaitement la charge via un algorithme glouton, \'{e}liminant le routeur appris et les pertes auxiliaires d'\'{e}quilibrage.
+    \item \textbf{Token-Routed MLP avec bin-packing glouton Zipf-balanced} : un routage d\'{e}terministe par token qui \'{e}quilibre la charge attendue des experts sous une distribution de fr\'{e}quences estim\'{e}e, sans routeur appris ni perte auxiliaire d'\'{e}quilibrage.
     \item \textbf{Mu-Guided Attention} : un m\'{e}canisme o\`{u} l'\'{e}tat latent $\mu$ calcul\'{e} \`{a} la couche $l$ (apr\`{e}s le MLP) est transmis \`{a} la couche $l+1$ pour influencer ses projections K, Q et V. Cela cr\'{e}e un canal de communication inter-couche portant le contexte sp\'{e}cifique aux experts.
 \end{enumerate}
 
@@ -118,7 +118,7 @@ Contrairement aux MoE traditionnels qui utilisent un routage souple appris avec 
 \end{equation}
 o\`{u} BinPack assigne chaque token $t$ (tri\'{e} par fr\'{e}quence d\'{e}croissante) \`{a} l'expert ayant la charge totale la plus faible (Section~\ref{sec:zipf_routing}).
 
-Ce choix de conception est \textit{d\'{e}lib\'{e}r\'{e}} : le routage ne d\'{e}pend pas du contenu s\'{e}mantique $\mathbf{x}$ mais uniquement de l'identifiant lexical du token. Chaque token du vocabulaire est \textit{pr\'{e}-assign\'{e}} \`{a} un expert sp\'{e}cifique avec un \'{e}quilibre de charge parfait (1.0000$\times$).
+Ce choix de conception est \textit{d\'{e}lib\'{e}r\'{e}} : le routage ne d\'{e}pend pas du contenu s\'{e}mantique $\mathbf{x}$ mais uniquement de l'identifiant lexical du token. Chaque token du vocabulaire est \textit{pr\'{e}-assign\'{e}} \`{a} un expert sp\'{e}cifique ; l'assignation est choisie pour \'{e}quilibrer la fr\'{e}quence attendue dans le corpus, et pas seulement le nombre d'entr\'{e}es du vocabulaire.
 
 Pour chaque token, un seul expert est activ\'{e}, combin\'{e} avec le Shared Lexical Expert :
 \begin{equation}
@@ -135,8 +135,8 @@ Chaque expert est un MLP standard avec activation SiLU (SwiGLU) :
 \textbf{Pourquoi pas un routage s\'{e}mantique ?} On pourrait objecter que sans routage bas\'{e} sur le contenu, le Token-Routed MLP n'est qu'un ``MLP d\'{e}coup\'{e} en morceaux ''. Cette objection ignore deux points cruciaux :
 
 \begin{enumerate}
-    \item \textbf{Sp\'{e}cialisation fonctionnelle} : malgr\'{e} un routage lexical (non s\'{e}mantique), chaque expert atteint une perplexit\'{e} plus basse sur son sous-ensemble de tokens que le MLP dense \'{e}quivalent sur les m\^{e}mes tokens (voir Section~\ref{sec:expert_analysis}). Cette sp\'{e}cialisation \textit{fonctionnelle} (mesur\'{e}e par la performance, non par la g\'{e}om\'{e}trie des poids) d\'{e}montre que le routage d\'{e}terministe induit une sp\'{e}cialisation utile sans effondrement.
-    \item \textbf{\'{E}quilibre parfait} : le routage modulo garantit math\'{e}matiquement que chaque expert re\c{c}oit exactement $1/n_{experts}$ des tokens, \'{e}liminant le probl\`{e}me central des MoE : le d\'{e}s\'{e}quilibre cumulatif.
+    \item \textbf{Sp\'{e}cialisation fonctionnelle} : malgr\'{e} un routage lexical (non s\'{e}mantique), les experts rout\'{e}s am\'{e}liorent la perte sur leurs sous-ensembles assign\'{e}s par rapport \`{a} la baseline dense align\'{e}e sur les m\^{e}mes sous-ensembles (voir Section~\ref{sec:expert_analysis}). Cette sp\'{e}cialisation \textit{fonctionnelle} (mesur\'{e}e par la performance, non par la g\'{e}om\'{e}trie des poids) montre que le routage d\'{e}terministe peut induire une sp\'{e}cialisation utile sans effondrement.
+    \item \textbf{\'{E}quilibre fr\'{e}quence-aware} : le bin-packing glouton sur les fr\'{e}quences empiriques \'{e}vite les forts d\'{e}s\'{e}quilibres \`{a} l'ex\'{e}cution que le routage modulo ou round-robin peut cr\'{e}er sous la loi de Zipf, sans objectif auxiliaire d'\'{e}quilibrage.
 \end{enumerate}
 
 \paragraph{M\'{e}canisme de sp\'{e}cialisation.} Une question cruciale se pose : comment les experts peuvent-ils se sp\'{e}cialiser quand le routage est bas\'{e} uniquement sur l'identit\'{e} lexicale du token plut\^{o}t que sur le contenu s\'{e}mantique ? L'intuition cl\'{e} est que les experts optimisent pour des \textit{distributions contextuelles}, pas pour les identit\'{e}s de tokens.
@@ -158,14 +158,14 @@ Le flux de gradient est :
 \nabla_{\mathbf{W}^{(i)}} \mathcal{L}_i = \mathbb{E}_{\mathbf{x} \sim \mathcal{C}_i}[\nabla_{\mathbf{W}^{(i)}} \ell(\text{Expert}_i(\mathbf{x}), y)]
 \end{equation}
 
-Puisque le routage modulo assure des ensembles de tokens disjoints ($T_i \cap T_j = \emptyset$), et que le langage naturel pr\'{e}sente une co-occurrence token-contexte non uniforme, les distributions contextuelles $\mathcal{C}_i$ et $\mathcal{C}_j$ sont statistiquement distinctes. Cela induit des statistiques de gradient diff\'{e}rentes, entra\^{i}nant la divergence des experts (Th\'{e}or\`{e}me~\ref{thm:gradient_orthogonalization}).
+Puisque le routage d\'{e}terministe assure des ensembles de tokens disjoints ($T_i \cap T_j = \emptyset$), et que le langage naturel pr\'{e}sente une co-occurrence token-contexte non uniforme, les distributions contextuelles $\mathcal{C}_i$ et $\mathcal{C}_j$ sont statistiquement distinctes. Cela induit des statistiques de gradient diff\'{e}rentes, entra\^{i}nant la divergence des experts (Th\'{e}or\`{e}me~\ref{thm:gradient_orthogonalization}).
 
-\textbf{Validation empirique :} La Section~\ref{sec:expert_analysis} mesure la sp\'{e}cialisation fonctionnelle via la perplexit\'{e} par expert : chaque expert atteint une PPL plus basse sur ses tokens assign\'{e}s que le MLP dense sur les m\^{e}mes tokens. Nous notons que la similarit\'{e} cosinus quasi nulle entre experts, bien qu'observ\'{e}e empiriquement, est un artefact g\'{e}om\'{e}trique attendu en haute dimension et ne constitue pas une preuve de sp\'{e}cialisation en soi.
+\textbf{Validation empirique :} La Section~\ref{sec:expert_analysis} mesure la sp\'{e}cialisation fonctionnelle via la perplexit\'{e} par expert sur les sous-ensembles assign\'{e}s, compar\'{e}e \`{a} la baseline dense sur les m\^{e}mes sous-ensembles. Nous notons que la similarit\'{e} cosinus quasi nulle entre experts, bien qu'observ\'{e}e empiriquement, est un artefact g\'{e}om\'{e}trique attendu en haute dimension et ne constitue pas une preuve de sp\'{e}cialisation en soi.
 
 \textbf{Avantages op\'{e}rationnels :}
 \begin{itemize}
     \item Pas de perte auxiliaire d'\'{e}quilibrage de charge (\'{e}conomie d'hyperparamr\`{e}tres)
-    \item 100\% d\'{e}terministe : reproductibilit\'{e} parfaite, d\'{e}bogage simplifi\'{e}
+    \item Table de routage d\'{e}terministe : d\'{e}bogage simplifi\'{e} et aucune d\'{e}cision stochastique du routeur
     \item D\'{e}ploiement trivial : tenseurs F32/BF16 avec indexation I64, nativement compatible avec PyTorch, ONNX, TensorRT sans logique de routage personnalis\'{e}e
 \end{itemize}
 
@@ -230,12 +230,12 @@ Le shared expert a la m\^{e}me taille interm\'{e}diaire qu'un expert rout\'{e} (
 
 \subsubsection{Bin-packing glouton Zipf-balanced}
 
-D\'{e}crit en Section~\ref{sec:zipf_routing}. Remplace le round-robin par un algorithme glouton qui atteint un \'{e}quilibre parfait de charge (1.0000$\times$).
+D\'{e}crit en Section~\ref{sec:zipf_routing}. Remplace le round-robin par un algorithme glouton qui \'{e}quilibre la charge attendue sous la distribution d'entra\^{i}nement estim\'{e}e.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{expert_balance.png}
-\caption{\'{E}quilibre des experts sous bin-packing Zipf. Le bin-packing \'{e}quilibre la \textit{charge totale} (fr\'{e}quence) \`{a} 1.0000$\times$, pas le nombre de tokens (qui varie l\'{e}g\`{e}rement autour de 25\%).}
+\caption{\'{E}quilibre des experts sous bin-packing Zipf. Le bin-packing \'{e}quilibre la \textit{charge totale} estim\'{e}e (fr\'{e}quence), pas le nombre d'entr\'{e}es du vocabulaire assign\'{e}es \`{a} chaque expert.}
 \label{fig:expert_balance}
 \end{figure}
 \FloatBarrier
@@ -273,9 +273,9 @@ Sur la base de ces \'{e}vidences, le scaler adaptatif a \'{e}t\'{e} retir\'{e} d
 
 Nous fournissons un fondement th\'{e}orique formel pour l'architecture Token-Routed MLP, \'{e}tablissant sa relation avec les mod\`{e}les denses et prouvant des propri\'{e}t\'{e}s cl\'{e}s.
 
-\subsection{\'{E}quilibre parfait de charge}
+\subsection{\'{E}quilibre du vocabulaire et des fr\'{e}quences}
 
-\begin{theorem}[\'{E}quilibre parfait de charge]
+\begin{theorem}[\'{E}quilibre du vocabulaire par routage modulo]
 \label{thm:perfect_balance}
 Soit $V$ un vocabulaire de taille $|V|$ et $n$ le nombre d'experts. Sous le routage modulo $r(t) = t \mod n$, chaque expert $e_i$ re\c{c}oit exactement $\lfloor|V|/n\rfloor$ ou $\lceil|V|/n\rceil$ tokens, avec un \'{e}quilibre parfait lorsque $n||V|$.
 \end{theorem}
@@ -290,38 +290,32 @@ La cardinalit\'{e} $|T_i| = \lfloor(|V|-i-1)/n\rfloor+1$. Lorsque $n$ divise $|V
 Dans notre impl\'{e}mentation, $|V| = 32000$ et $n = 4$, donnant $|T_i| = 8000$ tokens par expert.
 \end{proof}
 
-\subsection{\'{E}quivalence de capacit\'{e} avec les mod\`{e}les denses}
+\begin{remark}[\'{E}quilibre corpus sous Zipf]
+L'\'{e}quilibre en cardinalit\'{e} du vocabulaire ne suffit pas \`{a} garantir l'\'{e}quilibre de charge \`{a} l'ex\'{e}cution, car les fr\'{e}quences de tokens sont fortement non uniformes. Dans nos exp\'{e}riences, nous utilisons donc l'assignation par bin-packing glouton de la Section~\ref{sec:zipf_routing} : les tokens sont tri\'{e}s par fr\'{e}quence empirique puis assign\'{e}s \`{a} l'expert actuellement le moins charg\'{e}. Cela produit une table d\'{e}terministe avec une charge corpus \emph{attendue} \'{e}quilibr\'{e}e sous la distribution estim\'{e}e ; la charge r\'{e}alis\'{e}e par batch peut encore varier avec le bruit d'\'{e}chantillonnage et les changements de distribution.
+\end{remark}
 
-\begin{theorem}[Compromis capacit\'{e}-calcul]
+\subsection{Capacit\'{e} conditionnelle et calcul}
+
+\begin{proposition}[Compromis capacit\'{e}-calcul partitionn\'{e}]
 \label{thm:capacity}
 Un Token-Routed MLP avec $n$ experts, chacun de dimension interm\'{e}diaire $d_{ff}$, poss\`{e}de :
 \begin{enumerate}
     \item Nombre total de param\`{e}tres : $P_{total} = n \cdot P_{expert}$ o\`{u} $P_{expert} = 3 \cdot d_{model} \cdot d_{ff}$ (pour SwiGLU)
     \item Param\`{e}tres actifs par token : $P_{active} = P_{expert} = P_{total}/n$
-    \item Capacit\'{e} de repr\'{e}sentation \'{e}quivalente \`{a} un MLP dense de dimension interm\'{e}diaire $n \cdot d_{ff}$
+    \item Capacit\'{e} conditionnelle correspondant \`{a} une collection de $n$ MLP conditionn\'{e}s par token, un par partition lexicale
 \end{enumerate}
-\end{theorem}
+\end{proposition}
 
-\begin{proof}
-(1) et (2) d\'{e}coulent directement de la d\'{e}finition de l'architecture. Pour (3), consid\'{e}rons l'union des matrices de poids des experts. Soient $\mathbf{W}^{(i)}_{gate}, \mathbf{W}^{(i)}_{up}, \mathbf{W}^{(i)}_{down}$ les poids de l'expert $i$. D\'{e}finissons les matrices concat\'{e}n\'{e}es :
-\begin{align}
-\mathbf{W}^{concat}_{gate} &= [\mathbf{W}^{(0)}_{gate}; \ldots; \mathbf{W}^{(n-1)}_{gate}] \in \mathbb{R}^{d_{model} \times (n \cdot d_{ff})} \\
-\mathbf{W}^{concat}_{up} &= [\mathbf{W}^{(0)}_{up}; \ldots; \mathbf{W}^{(n-1)}_{up}] \in \mathbb{R}^{d_{model} \times (n \cdot d_{ff})}
-\end{align}
-
-La classe de fonctions repr\'{e}sentable par le Token-Routed MLP sur le vocabulaire est :
+\begin{proof}[Esquisse de preuve]
+(1) et (2) d\'{e}coulent directement de la d\'{e}finition de l'architecture. Pour (3), la couche rout\'{e}e repr\'{e}sente une famille de fonctions index\'{e}e par la table de routage d\'{e}terministe :
 \begin{equation}
 \mathcal{F}_{TR} = \bigcup_{i=0}^{n-1} \{f_i : \mathbb{R}^{d_{model}} \to \mathbb{R}^{d_{model}}\}
 \end{equation}
-o\`{u} chaque $f_i$ est un MLP SwiGLU. Un MLP dense de dimension $n \cdot d_{ff}$ peut repr\'{e}senter toute fonction de $\mathcal{F}_{TR}$ par masquage ad\'{e}quat des poids, \'{e}tablissant $\mathcal{F}_{TR} \subseteq \mathcal{F}_{dense}$.
-
-R\'{e}ciproquement, $\mathcal{F}_{dense} \subseteq \mathcal{F}_{TR}$ : tout MLP dense $f_{dense}$ de dimension interm\'{e}diaire $n \cdot d_{ff}$ peut \^{e}tre exactement reproduit en fixant les matrices de poids de chaque expert \`{a} $\mathbf{W}^{(i)} = \mathbf{W}_{dense}[:, id_{ff}:(i+1)d_{ff}]$ pour les projections gate/up. Chaque token active exactement un expert, et les experts couvrent collectivement l'espace complet $n \cdot d_{ff}$ via l'union sur le vocabulaire, d'o\`{u} $\mathcal{F}_{TR} = \mathcal{F}_{dense}$.
-
-L'intuition cl\'{e} est que le Token-Routed MLP atteint cette capacit\'{e} avec $1/n$ du co\^{u}t de calcul par passe avant, puisqu'un seul expert est activ\'{e} par token.
+o\`{u} chaque $f_i$ est un MLP SwiGLU appliqu\'{e} seulement aux tokens assign\'{e}s \`{a} l'expert $i$. L'architecture remplace donc une fonction dense partag\'{e}e par une famille d\'{e}terministe de fonctions plus \'{e}troites conditionn\'{e}es par le token. Cela ne doit pas \^{e}tre interpr\'{e}t\'{e} comme une \'{e}quivalence fonctionnelle exacte avec un MLP dense arbitraire pour chaque token ; il s'agit d'un compromis entre capacit\'{e} conditionnelle et calcul.
 \end{proof}
 
 \begin{corollary}[Efficacit\'{e} computationnelle]
-Pour une s\'{e}quence de $L$ tokens, le Token-Routed MLP n\'{e}cessite $L \cdot P_{expert}$ FLOPs tandis qu'un MLP dense de capacit\'{e} \'{e}quivalente n\'{e}cessite $L \cdot n \cdot P_{expert}$ FLOPs. Le facteur de r\'{e}duction du calcul est exactement $n$.
+Pour une s\'{e}quence de $L$ tokens, un Token-Routed MLP top-1 n\'{e}cessite $L \cdot P_{expert}$ applications de param\`{e}tres MLP, tandis qu'un MLP dense de largeur experte totale identique n\'{e}cessiterait $L \cdot n \cdot P_{expert}$. Dans le mod\`{e}le r\'{e}siduel top-$k=2$ utilis\'{e} \`{a} 300M, la branche rout\'{e}e active deux petits experts plus une grande branche partag\'{e}e ; nous reportons donc la qualit\'{e} \`{a} tokens vus identiques et le d\'{e}bit mesur\'{e}, plut\^{o}t qu'un speedup end-to-end id\'{e}al de $n\times$.
 \end{corollary}
 
 \subsection{Divergence des experts sous descente de gradient}
@@ -335,7 +329,7 @@ Soient $\mathbf{W}^{(i)}$ et $\mathbf{W}^{(j)}$ les matrices de poids des expert
 \begin{equation}
 \mathbb{E}[\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)})] \to 0 \quad \text{lorsque } t \to \infty
 \end{equation}
-\`{a} condition que les ensembles de tokens $T_i$ et $T_j$ soient disjoints (garanti par le routage modulo).
+\`{a} condition que les ensembles de tokens $T_i$ et $T_j$ soient disjoints (garanti par le routage lexical d\'{e}terministe).
 \end{theorem}
 
 \begin{proof}[Esquisse de preuve]
@@ -352,17 +346,17 @@ Puisque $T_i \cap T_j = \emptyset$ par construction, les gradients $\nabla_{\mat
 \`{A} partir d'une initialisation al\'{e}atoire avec $\mathbb{E}[\cos(\mathbf{W}^{(i)}_0, \mathbf{W}^{(j)}_0)] \approx 0$ (pour des poids de grande dimension), l'orthogonalit\'{e} est pr\'{e}serv\'{e}e tout au long de l'entra\^{i}nement. Nos mesures empiriques confirment $\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)}) \approx 0$ pour toutes les paires d'experts et toutes les couches (Section~\ref{sec:token_routing_analysis}).
 \end{proof}
 
-\subsection{Le guidage Mu comme codage pr\'{e}dictif}
+\subsection{Le guidage Mu comme modulation contextuelle vers l'avant}
 
 Le m\'{e}canisme Mu-Guided Attention peut \^{e}tre interpr\'{e}t\'{e} \`{a} travers le prisme du codage pr\'{e}dictif \citep{rao1999predictive}, une th\'{e}orie du calcul cortical.
 
-\begin{proposition}[Communication inter-couche]
-Le m\'{e}canisme de guidage $\mu$ impl\'{e}mente une forme de communication inter-couche o\`{u} le contexte de la couche $l-1$ (apr\`{e}s son MLP) influence le traitement de la couche $l$ :
+\begin{proposition}[Modulation contextuelle vers l'avant]
+Le m\'{e}canisme de guidage $\mu$ impl\'{e}mente une forme de modulation pr\'{e}dictive o\`{u} le contexte post-MLP de la couche pr\'{e}c\'{e}dente influence les projections d'attention de la couche suivante :
 \begin{equation}
-\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{signal\ inter\text{-}couche}
+\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{\text{contexte vers l'avant}}
 \end{equation}
 
-Ceci est analogue \`{a} la mise \`{a} jour du codage pr\'{e}dictif :
+Ceci est reli\'{e} dans l'esprit aux mises \`{a} jour du codage pr\'{e}dictif, m\^{e}me si le flux d'information de notre architecture est feed-forward entre couches adjacentes plut\^{o}t qu'un feedback de couches sup\'{e}rieures vers des couches inf\'{e}rieures :
 \begin{equation}
 r^{(l)} = f(U^{(l)}r^{(l-1)} + W^{(l)}\epsilon^{(l+1)})
 \end{equation}
@@ -426,17 +420,17 @@ Pour une s\'{e}quence de longueur $S$, une dimension de mod\`{e}le $d$, une dime
 \mathcal{O}_{dense} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot d_{ff}}_{MLP}\right)
 \end{equation}
 
-\textbf{COMPLEXITY-DEEP (Token-Routed MLP + guidage Mu) :}
+\textbf{COMPLEXITY-DEEP (branche Token-Routed top-1 + guidage Mu) :}
 \begin{equation}
 \mathcal{O}_{ours} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot \frac{d_{ff}}{n}}_{Token\text{-}Routed\ MLP} + \underbrace{S \cdot d}_{mise\ \grave{a}\ jour\ \mu}\right)
 \end{equation}
 
-Le facteur de r\'{e}duction du calcul MLP est exactement $n$, tandis que le surco\^{u}t du guidage $\mu$ est $\mathcal{O}(S \cdot d)$, ce qui est n\'{e}gligeable compar\'{e} \`{a} l'attention pour $S > d$.
+La branche rout\'{e}e top-1 id\'{e}alis\'{e}e r\'{e}duit le calcul MLP rout\'{e} d'un facteur $n$. Les variantes avec shared expert ou top-$k>1$, dont notre mod\`{e}le 300M, ont un profil de calcul actif diff\'{e}rent ; leur d\'{e}bit r\'{e}alis\'{e} est mesur\'{e} empiriquement en Section~\ref{sec:scaling_300m}.
 \end{theorem}
 
 \begin{table}[h]
 \centering
-\caption{Comparaison de la complexit\'{e}. Le Token-Routed MLP atteint une efficacit\'{e} computationnelle de niveau MoE avec un nombre de param\`{e}tres de niveau dense et une empreinte m\'{e}moire r\'{e}duite.}
+\caption{Comparaison de complexit\'{e} id\'{e}alis\'{e}e pour une branche Token-Routed MLP top-1. Les variantes avec shared expert et top-$k$ \'{e}changent une partie de cette r\'{e}duction th\'{e}orique de calcul contre davantage de capacit\'{e}.}
 \label{tab:complexity}
 \begin{tabular}{lccc}
 \toprule
@@ -478,14 +472,14 @@ L'erreur totale d'approximation de COMPLEXITY-DEEP se d\'{e}compose comme :
 o\`{u} :
 \begin{itemize}
     \item $\mathcal{E}_{attn}$ : erreur due au contexte d'attention fini
-    \item $\mathcal{E}_{routing} = 0$ pour le Token-Routed MLP (le routage d\'{e}terministe \'{e}limine l'erreur de s\'{e}lection d'expert)
+    \item $\mathcal{E}_{routing}$ : erreur induite par l'engagement de chaque token dans une partition lexicale fixe plut\^{o}t que par un choix d'experts depuis l'\'{e}tat cach\'{e} courant
     \item $\mathcal{E}_{expert}$ : erreur d'approximation au sein de chaque expert, born\'{e}e par la capacit\'{e} de l'expert
     \item $\mathcal{E}_{\mu} \leq \alpha^L \|\mu^{(0)}\|_2$ : erreur due \`{a} l'initialisation de l'\'{e}tat $\mu$ (dispara\^{i}t exponentiellement)
 \end{itemize}
 \end{proposition}
 
-\begin{remark}[Avantage sur les MoE stochastiques]
-Dans les Mixture-of-Experts standards avec gating appris, $\mathcal{E}_{routing}$ est non nul et d\'{e}pend de la pr\'{e}cision du gating. Le Token-Routed MLP \'{e}limine enti\`{e}rement cette source d'erreur en utilisant un routage modulo d\'{e}terministe, \'{e}changeant la flexibilit\'{e} du routage s\'{e}mantique contre une erreur de routage garantie nulle.
+\begin{remark}[Compromis avec les MoE stochastiques]
+Dans les Mixture-of-Experts standards avec gating appris, la qualit\'{e} du routage d\'{e}pend du routeur appris et de ses pertes auxiliaires. Le Token-Routed MLP supprime l'apprentissage du routeur et les pertes d'\'{e}quilibrage, mais abandonne aussi la s\'{e}lection d'experts adaptative au contenu. La question empirique est de savoir si les partitions lexicales et le shared expert fournissent assez de sp\'{e}cialisation conditionnelle pour compenser cette restriction.
 \end{remark}
 
 %=============================================================================
@@ -604,7 +598,7 @@ Le routage modulo original ($\text{expert}(t) = t \bmod n$) distribue le \textit
 \begin{equation}
     \text{expert}(t) = \arg\min_{e} \sum_{t' \in T_e} \text{freq}(t'), \quad \text{pour } t \text{ en ordre d\'{e}croissant de fr\'{e}quence}
 \end{equation}
-o\`{u} $T_e$ est l'ensemble des tokens d\'{e}j\`{a} assign\'{e}s \`{a} l'expert $e$. Contrairement au round-robin (qui laisse jusqu'\`{a} 38\% de d\'{e}s\'{e}quilibre), le bin-packing glouton atteint un \'{e}quilibre \textbf{parfait de 1.0000$\times$} entre tous les experts. Le mapping reste d\'{e}terministe et est calcul\'{e} une seule fois avant l'entra\^{i}nement.
+o\`{u} $T_e$ est l'ensemble des tokens d\'{e}j\`{a} assign\'{e}s \`{a} l'expert $e$. Contrairement au round-robin (qui peut laisser de forts d\'{e}s\'{e}quilibres induits par Zipf), le bin-packing glouton \'{e}quilibre la charge attendue sous l'estimation de fr\'{e}quence utilis\'{e}e pour construire la table. Le mapping reste d\'{e}terministe et est calcul\'{e} une seule fois avant l'entra\^{i}nement ; l'utilisation r\'{e}alis\'{e}e par batch ou en fin de run peut s'\'{e}carter d'exactement 25\% car le flux d'entra\^{i}nement est fini et non stationnaire.
 
 %=============================================================================
 \section{Discussion}
@@ -619,12 +613,12 @@ o\`{u} $T_e$ est l'ensemble des tokens d\'{e}j\`{a} assign\'{e}s \`{a} l'expert 
 \label{tab:arch_comparison}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Architecture} & \textbf{Descendant} & \textbf{Routage} & \textbf{\'{E}quilibrage de charge} \\
+\textbf{Architecture} & \textbf{Signal inter-couche} & \textbf{Routage} & \textbf{Perte d'\'{e}quilibrage} \\
 \midrule
 Transformer & Non & Non & N/A \\
-Switch Transformer & Non & Souple & Requis \\
-Mixtral & Non & Top-2 & Requis \\
-\textbf{COMPLEXITY-DEEP} & \textbf{Oui ($\mu$)} & \textbf{Dur} & \textbf{Non requis} \\
+Switch Transformer & Non & Souple & Requise \\
+Mixtral & Non & Top-2 & Requise \\
+\textbf{COMPLEXITY-DEEP} & \textbf{$\mu$ forward} & \textbf{Lexical dur} & \textbf{Non utilis\'{e}e} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -640,11 +634,11 @@ Mixtral & Non & Top-2 & Requis \\
 \subsection{Analyse du routage par token}
 \label{sec:token_routing_analysis}
 
-On pourrait craindre que le routage d\'{e}terministe (sans perte d'\'{e}quilibrage de charge) conduise \`{a} un d\'{e}s\'{e}quilibre des experts. Notre analyse du checkpoint apr\`{e}s 1M d'\'{e}tapes d\'{e}montre le contraire :
+On pourrait craindre que le routage d\'{e}terministe (sans perte d'\'{e}quilibrage de charge) conduise \`{a} un d\'{e}s\'{e}quilibre des experts. Notre analyse indique que le routage Zipf-balanced garde tous les experts actifs :
 
 \begin{itemize}
-    \item \textbf{Distribution parfaite} : chaque expert traite exactement 25\% des tokens (8000/32000)
-    \item \textbf{Normes \'{e}quilibr\'{e}es} : coefficient de variation des normes = 0,0000 (experts identiquement pond\'{e}r\'{e}s)
+    \item \textbf{Utilisation proche de l'\'{e}quilibre} : dans le run 300M, l'utilisation finale observ\'{e}e des experts est 0,2481/0,2635/0,2481/0,2403, sans expert mort.
+    \item \textbf{Normes \'{e}quilibr\'{e}es} : les normes des experts restent proches entre branches rout\'{e}es.
     \item \textbf{Pas d'effondrement} : les 4 experts restent diff\'{e}renci\'{e}s (diff\'{e}rence inter-experts $\sim$0,022)
 \end{itemize}
 
@@ -658,7 +652,7 @@ On pourrait craindre que le routage d\'{e}terministe (sans perte d'\'{e}quilibra
 \toprule
 \textbf{Crit\`{e}re} & \textbf{Token-Routed} & \textbf{MoE standard} & \textbf{Avantage} \\
 \midrule
-\'{E}quilibre des experts & Bin-packing (1.0000$\times$) & Perte aux. requise & Token-Routed \\
+\'{E}quilibre des experts & Bin-packing par fr\'{e}quence & Perte aux. requise & Token-Routed \\
 Sp\'{e}cialisation & Fonctionnelle (PPL/expert) & Apprise (softmax) & D\'{e}pend \\
 D\'{e}ploiement & Sans r\'{e}seau de gating & Gating + dispatch & Token-Routed \\
 D\'{e}terminisme & 100\% & Non (softmax) & Token-Routed \\
@@ -705,7 +699,7 @@ Run 4 : Mixtral (routeur appris, top-1)   & 187M & 4,843 & $-0,062$ \\
 \end{tabular}
 \end{table}
 
-Le mod\`{e}le complet (Run 2) converge significativement plus vite que le dense ($-0,112$) et que le MoE Mixtral-style ($-0,050$). Le routage d\'{e}terministe surpasse le routeur appris en efficacit\'{e} d'\'{e}chantillonnage : les experts se sp\'{e}cialisent d\`{e}s le premier step, sans phase d'apprentissage du routeur. Sans Mu-Guidance (Run 3), le Token-Routed est plus lent que le dense ($+0,011$), confirmant que le signal d'\'{e}quilibre inter-couche est le composant cl\'{e}.
+\`{A} cette \'{e}chelle proxy, le mod\`{e}le complet (Run 2) converge plus vite que la baseline dense ($-0,112$) et que le MoE Mixtral-style ($-0,050$). L'ablation sans Mu (Run 3) est l\'{e}g\`{e}rement plus lente que dense \`{a} 187M ($+0,011$ en perte moyenne), ce qui sugg\`{e}re que Mu-Guidance aide cette configuration de petite \'{e}chelle. Cette conclusion ne se transf\`{e}re pas automatiquement au run 300M, o\`{u} le meilleur r\'{e}sultat \`{a} budget align\'{e} est obtenu par une variante Token-Routed r\'{e}siduelle sans Mu-Guidance.
 
 \begin{figure}[!htbp]
 \centering
@@ -787,7 +781,7 @@ liss\'{e} 50 derniers & --- & 2,9446 & \textbf{2,9283} & $\mathbf{-0,016}$ \\
 \end{table}
 \FloatBarrier
 
-\paragraph{D\'{e}bit d'entra\^{i}nement.} Le compute actif par token du Token-Routed est $2 \times d_{ff}/n$ (un expert rout\'{e} plus shared expert) vs $d_{ff}$ pour dense. Les deux runs ont \'{e}t\'{e} entra\^{i}n\'{e}s sur 8$\times$B300, dense atteignant environ 0,95M tokens/s et Token-Routed environ 0,75M tokens/s au m\^{e}me batch global (1\,048\,576 tokens/step). Toutes les comparaisons de qualit\'{e} ci-dessus sont \`{a} tokens vus identiques ; le co\^{u}t wall-clock par step est comparable, l'inf\'{e}rence rout\'{e}e \'{e}tant petite devant le shared expert. Le lookup de la table de routage est lui-m\^{e}me $O(1)$ avec z\'{e}ro synchronisation GPU.
+\paragraph{D\'{e}bit d'entra\^{i}nement.} Le mod\`{e}le Token-Routed 300M utilise une grande branche partag\'{e}e et une petite branche rout\'{e}e top-$k=2$ ; il n'est donc pas con\c{c}u comme un benchmark pur de vitesse top-1. Les deux runs ont \'{e}t\'{e} entra\^{i}n\'{e}s sur 8$\times$B300, dense atteignant environ 0,95M tokens/s et Token-Routed environ 0,75M tokens/s au m\^{e}me batch global (1\,048\,576 tokens/step). Toutes les comparaisons de qualit\'{e} ci-dessus sont \`{a} tokens vus identiques. Le lookup de la table de routage est $O(1)$ et ne requiert pas la synchronisation d'un routeur appris.
 
 \subsection{Performance d'inf\'{e}rence}
 \label{sec:inference_perf}
@@ -807,8 +801,9 @@ Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM 0.18 avec PagedAttention et 
 \label{sec:limitations}
 
 \begin{itemize}
-    \item \textbf{Ablation No-Mu} : \textit{r\'{e}alis\'{e}e} (Run 3, Table~\ref{tab:ablation_results}). Sans Mu-Guidance, le Token-Routed est plus lent que le dense ($+0,011$ en perte moyenne), confirmant le r\^{o}le essentiel du signal d'\'{e}quilibre inter-couche
-    \item \textbf{Confirmation full-run} : le run 300M corrig\'{e} perd les deux premiers points de validation align\'{e}s (steps 250 et 500), croise au step 750, puis reste devant jusqu'au dernier point de validation align\'{e} au step 7500. Les benchmarks aval devront \^{e}tre relanc\'{e}s depuis les checkpoints 300M corrig\'{e}s.
+    \item \textbf{R\'{e}sultat de scaling single-seed} : le run 300M corrig\'{e} est une comparaison compl\`{e}te \`{a} budget align\'{e} sur 8B tokens, mais il reste un seul seed par architecture. Des seeds suppl\'{e}mentaires quantifieraient la robustesse de l'\'{e}cart liss\'{e} final de $-0,0163$ \`{a} la variance d'initialisation.
+    \item \textbf{Mu-Guidance au scale} : l'ablation 187M soutient Mu-Guidance, mais le gain corrig\'{e} \`{a} 300M utilise un mod\`{e}le Token-Routed r\'{e}siduel sans Mu-Guidance. Un run Mu-guided complet \`{a} 300M reste un travail futur.
+    \item \textbf{Table de routage sp\'{e}cifique \`{a} la distribution} : le bin-packing Zipf utilise une estimation empirique des fr\'{e}quences de la distribution d'entra\^{i}nement. Les changements de domaine peuvent modifier l'utilisation r\'{e}alis\'{e}e des experts et doivent \^{e}tre mesur\'{e}s lors du transfert de la table.
     \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation zero-shot sur ARC-Easy, HellaSwag et MMLU via \texttt{lm-evaluation-harness} doit \^{e}tre relanc\'{e}e sur les checkpoints 300M corrig\'{e}s.
 \end{itemize}
 
@@ -819,7 +814,7 @@ Le mod\`{e}le Run 2 (187M) d\'{e}ploy\'{e} sur vLLM 0.18 avec PagedAttention et 
 
 Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage avec trois contributions principales : (1) le Token-Routed MLP avec routage Zipf-balanced par bin-packing glouton et Shared Lexical Expert pour une assignation d\'{e}terministe sans pertes auxiliaires, (2) le Mu-Guided Attention avec $\mu_{\text{init}}$ apprenable et production de $\mu$ apr\`{e}s le MLP pour une communication inter-couche tenant compte des experts, et (3) une recette d'entra\^{i}nement avec warmup dynamique (5\%) et initialisation GPT-style ($1/\sqrt{2L}$).
 
-L'ablation de composants \`{a} 187M (500M tokens) montre que le Token-Routed surpasse la baseline dense en perte moyenne (4,793 vs 4,905, $\Delta = -0,112$). Dans le run de scaling iso-param\`{e}tres 300M \`{a} iso-batch (1\,048\,576 tokens/step, budget complet 8B tokens), Token-Routed paie un co\^{u}t de sp\'{e}cialisation transitoire pendant les $\approx$700 premiers steps (pic $+0,31$ vers le step 40), gagne pour la premi\`{e}re fois en train-loss logg\'{e} au step 740 et en validation au step 750, puis reste en avance jusqu'\`{a} la fin : l'\'{e}cart train-loss liss\'{e} sur les 50 derniers steps logg\'{e}s est de $-0,0163$ en faveur de Token-Routed (2,9283 vs 2,9446). Cela inverse la conclusion de scaling ant\'{e}rieure et indique que l'impl\'{e}mentation Token-Routed corrig\'{e}e devient sample-efficient une fois que les experts Zipf-rout\'{e}s se sp\'{e}cialisent. L'inf\'{e}rence sur vLLM 0.18 atteint 8\,078 tok/s pour le mod\`{e}le 187M ; les chiffres 300M mis \`{a} jour seront report\'{e}s depuis le checkpoint corrig\'{e}.
+L'ablation de composants \`{a} 187M (500M tokens) montre que la configuration compl\`{e}te Token-Routed+Shared+Mu surpasse la baseline dense en perte moyenne (4,793 vs 4,905, $\Delta = -0,112$). Dans le run de scaling iso-param\`{e}tres 300M \`{a} iso-batch (1\,048\,576 tokens/step, budget complet 8B tokens), la variante Token-Routed r\'{e}siduelle sans Mu paie un co\^{u}t de sp\'{e}cialisation transitoire pendant les $\approx$700 premiers steps (pic $+0,31$ vers le step 40), gagne pour la premi\`{e}re fois en train-loss logg\'{e} au step 740 et en validation au step 750, puis reste en avance jusqu'\`{a} la fin : l'\'{e}cart train-loss liss\'{e} sur les 50 derniers steps logg\'{e}s est de $-0,0163$ en faveur de Token-Routed (2,9283 vs 2,9446). Ces r\'{e}sultats soutiennent le routage lexical d\'{e}terministe comme alternative viable au routage MoE appris \`{a} nombre de param\`{e}tres align\'{e}, tout en laissant le scaling multi-seed et le scaling Mu-guided complet comme prochaines \'{e}tapes importantes. L'inf\'{e}rence sur vLLM 0.18 atteint 8\,078 tok/s pour le mod\`{e}le 187M ; les chiffres 300M mis \`{a} jour seront report\'{e}s depuis le checkpoint corrig\'{e}.
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail introduit des innovations architecturales pour les mod\`{e}les de langage. Bien que ces mod\`{e}les aient de nombreuses applications, ils comportent \'{e}galement des risques de mauvaise utilisation. Nous publions les poids du mod\`{e}le pour permettre la recherche tout en encourageant une utilisation responsable.
