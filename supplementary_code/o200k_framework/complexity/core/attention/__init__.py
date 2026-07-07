@@ -21,7 +21,6 @@ Usage:
 from .base import AttentionBase, AttentionConfig
 from .gqa import GroupedQueryAttention, MultiHeadAttention, MultiQueryAttention
 from .routed_gqa import RoutedGQA
-from .i64_attention import I64Attention
 
 __all__ = [
     "AttentionBase",
@@ -30,5 +29,4 @@ __all__ = [
     "MultiHeadAttention",
     "MultiQueryAttention",
     "RoutedGQA",
-    "I64Attention",
 ]

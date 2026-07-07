@@ -38,7 +38,6 @@ def _profile_args(raw: dict[str, Any]) -> SimpleNamespace:
     return SimpleNamespace(
         **profile,
         vocab_size=int(model.get("vocab_size", 200019)),
-        use_mu_guidance=bool(run.get("use_mu_guidance", False)),
         learn_shared_routed_gates=bool(run.get("learn_shared_routed_gates", True)),
         shared_gate_init=float(run.get("shared_gate_init", 1.0)),
         routed_gate_init=float(run.get("routed_gate_init", 0.1)),
@@ -46,12 +45,6 @@ def _profile_args(raw: dict[str, Any]) -> SimpleNamespace:
         top_k_primary_weight=float(run.get("top_k_primary_weight", 0.5)),
         static_expert_capacity=bool(run.get("static_expert_capacity", False)),
         routing_strategy=str(run.get("routing_strategy", "zipf")),
-        mu_clamp=bool(run.get("mu_clamp", False)),
-        mu_norm=bool(run.get("mu_norm", False)),
-        mu_alpha_init=float(run.get("mu_alpha_init", 1.0)),
-        mu_init_value=float(run.get("mu_init_value", 0.0)),
-        mu_context_min=float(run.get("mu_context_min", -2.0)),
-        mu_context_max=float(run.get("mu_context_max", 2.0)),
     )
 
 

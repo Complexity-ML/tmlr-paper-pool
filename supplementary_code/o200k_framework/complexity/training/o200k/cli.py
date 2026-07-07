@@ -185,13 +185,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the MLP type (e.g. 'swiglu' for a dense baseline). Defaults to the profile's token_routed.",
     )
-    parser.add_argument("--use-mu-guidance", action="store_true")
-    parser.add_argument("--mu-clamp", action="store_true")
-    parser.add_argument("--mu-norm", action="store_true")
-    parser.add_argument("--mu-alpha-init", type=float, default=1.0)
-    parser.add_argument("--mu-init-value", type=float, default=0.0)
-    parser.add_argument("--mu-context-min", type=float, default=-2.0)
-    parser.add_argument("--mu-context-max", type=float, default=2.0)
     parser.add_argument("--log-steps", type=int, default=10)
     parser.add_argument("--eval-steps", type=int, default=50)
     parser.add_argument("--eval-batches", type=int, default=8)

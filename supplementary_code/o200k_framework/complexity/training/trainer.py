@@ -492,8 +492,6 @@ class Trainer:
                 return "shared"
             if "self_attn" in name and "norm" not in name:
                 return "attention"
-            if "mu_guidance" in name or "mu_init" in name or "mu_to_" in name:
-                return "mu"
             if "norm" in name or "ln_" in name:
                 return "norm_skipped"  # explicitly skipped
             return "dense"

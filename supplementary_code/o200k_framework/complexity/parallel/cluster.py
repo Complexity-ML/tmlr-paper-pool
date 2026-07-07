@@ -296,7 +296,7 @@ class ClusterModel(nn.Module):
                     process_group=self._dp_group,
                     # MoE models have params that may not see gradients on every
                     # forward (e.g. an expert that no token routed to in this batch),
-                    # plus the per-layer mu_init expand path. DDP needs the unused
+                    # plus optional inactive branches. DDP needs the unused
                     # detection to avoid 'Expected reduction' errors.
                     find_unused_parameters=True,
                     gradient_as_bucket_view=True,

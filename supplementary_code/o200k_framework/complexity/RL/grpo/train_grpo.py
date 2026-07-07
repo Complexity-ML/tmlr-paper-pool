@@ -2,7 +2,7 @@
 DAPO (Decoupled Alignment from Policy Optimization) for ComplexityModel.
 
 From-scratch implementation — no TRL dependency.
-Works natively with mu-guidance, token-routed MoE, deterministic Zipf routing.
+Works natively with token-routed MLPs and deterministic Zipf routing.
 
 Improvements over GRPO:
   - No reference model (no KL penalty) → 2× less VRAM

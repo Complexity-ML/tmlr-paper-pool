@@ -83,7 +83,6 @@ def make_config(args) -> ModelConfig:
         shared_expert_chunk_tokens=getattr(args, "shared_expert_chunk_tokens", 0),
         norm_type="rmsnorm",
         use_qk_norm=True,
-        use_mu_guidance=args.use_mu_guidance,
         use_shared_routed_gates=args.learn_shared_routed_gates,
         shared_gate_init=args.shared_gate_init,
         routed_gate_init=args.routed_gate_init,
@@ -95,10 +94,4 @@ def make_config(args) -> ModelConfig:
         collect_moe_telemetry=bool(getattr(args, "moe_telemetry", False)),
         routing_strategy=getattr(args, "routing_strategy", "zipf"),
         lsh_threshold_mode=getattr(args, "lsh_threshold_mode", "zero"),
-        clamp_mu_contextual=args.mu_clamp,
-        use_mu_norm=args.mu_norm,
-        mu_alpha_init=args.mu_alpha_init,
-        mu_init_value=args.mu_init_value,
-        mu_context_min=args.mu_context_min,
-        mu_context_max=args.mu_context_max,
     )

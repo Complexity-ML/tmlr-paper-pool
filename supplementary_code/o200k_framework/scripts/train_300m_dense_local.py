@@ -59,7 +59,6 @@ def make_config(args) -> ModelConfig:
         shared_expert=False,
         norm_type="rmsnorm",
         use_qk_norm=True,
-        use_mu_guidance=False,
     )
 
 

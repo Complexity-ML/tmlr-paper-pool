@@ -29,7 +29,7 @@ class ComplexityModel(nn.Module):
     - Llama-style (GQA, SwiGLU, RMSNorm)
     - Mistral-style (sliding window)
     - GPT-style (MHA, GELU, LayerNorm)
-    - Complexity custom (Token-Routed MoE + Mu-Guidance)
+    - Complexity custom (Token-Routed lexical residual MLP)
 
     Usage:
         from complexity.config import ModelConfig
@@ -74,16 +74,6 @@ class ComplexityModel(nn.Module):
             self.lm_head = None  # Will use embed_tokens.weight
         else:
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
-        # Learnable mu_init: gives layer 0 a mu_prev instead of None
-        self._has_mu = config.effective_mu_guidance
-        if self._has_mu:
-            self.mu_init = nn.Parameter(
-                torch.full(
-                    (1, 1, config.hidden_size),
-                    float(getattr(config, 'mu_init_value', 0.0)),
-                )
-            )
 
         # Gradient checkpointing (disabled by default)
         self._gradient_checkpointing = False
@@ -247,8 +237,7 @@ class ComplexityModel(nn.Module):
                         deterministic_gaussian_init_(lin.weight, key=base + off, std=s)
                         if lin.bias is not None:
                             nn.init.zeros_(lin.bias)
-                # Any extra Linear inside attention (e.g. mu_to_q / mu_to_k /
-                # mu_to_v for mu-guidance variants) gets a distinct key too.
+                # Any extra Linear inside attention gets a distinct key too.
                 extra_off = 20
                 for child_name, child in attn.named_children():
                     if child_name in known or not isinstance(child, nn.Linear):
@@ -326,16 +315,12 @@ class ComplexityModel(nn.Module):
         # Initialize KV cache list
         new_past_key_values = [] if use_cache else None
 
-        # Process through layers (mu flows from layer to layer)
-        # mu_init: learnable starting mu so layer 0 gets guidance too
-        mu_prev = None
-        if self._has_mu:
-            mu_prev = self.mu_init.expand(batch_size, seq_len, -1)
+        # Process through layers.
         for i, layer in enumerate(self.layers):
             past_kv = past_key_values[i] if past_key_values is not None else None
 
             if self._gradient_checkpointing and self.training:
-                hidden_states, new_kv, _, mu_contextual = activation_checkpoint(
+                hidden_states, new_kv, _, _ = activation_checkpoint(
                     layer,
                     hidden_states,
                     attention_mask,
@@ -343,23 +328,18 @@ class ComplexityModel(nn.Module):
                     use_cache,
                     input_ids,
                     None,  # velocity_state (unused, kept for compat)
-                    mu_prev,
                     None,  # sort_idx (computed internally by token_routed)
                     use_reentrant=False,
                 )
             else:
-                hidden_states, new_kv, _, mu_contextual = layer(
+                hidden_states, new_kv, _, _ = layer(
                     hidden_states,
                     attention_mask=attention_mask,
                     past_key_value=past_kv,
                     use_cache=use_cache,
                     token_ids=input_ids,
-                    mu_prev=mu_prev,
                 )
 
-            # mu from this layer guides next layer's attention — free (no clamp).
-            if mu_contextual is not None and self._has_mu:
-                mu_prev = mu_contextual
 
             if use_cache:
                 new_past_key_values.append(new_kv)

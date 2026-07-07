@@ -175,8 +175,7 @@ def main():
             f"gates=({args.shared_gate_init}->{args.shared_gate_final},"
             f"{args.routed_gate_init}->{args.routed_gate_final}), "
             f"expert_diversity={args.expert_diversity_lambda} target={args.expert_diversity_target}, "
-            f"use_mu={args.use_mu_guidance}, mu_clamp={args.mu_clamp}, mu_norm={args.mu_norm}, "
-            f"mu_alpha={args.mu_alpha_init}, mu_init={args.mu_init_value}"
+            "lexical_residual_no_mu=True"
         )
         logger.info(
             "Loss: "

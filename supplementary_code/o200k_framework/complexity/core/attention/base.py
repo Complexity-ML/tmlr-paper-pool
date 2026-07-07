@@ -26,7 +26,6 @@ class AttentionConfig:
     use_sdpa: bool = True
     rope_type: str = "standard"  # standard, yarn, dynamic
     use_mup_attn_scale: bool = False  # μP: 1/d_head attention logit scale (vs 1/√d_head)
-    use_mu_guidance: bool = False  # Add mu-to-K/Q/V projections for guided attention.
     scale: Optional[float] = None
 
     def __post_init__(self):

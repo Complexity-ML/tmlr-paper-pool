@@ -90,20 +90,6 @@ class ModelConfig:
     collect_moe_telemetry: bool = False  # Per-layer expert/RMS diagnostics. Disabled by default for throughput.
     use_cggr: Any = "auto"  # "auto", True, or False. CGGR grouped-GEMM Triton path for TokenRoutedMLP when custom Triton is available.
 
-    # === Mu-Guidance ===
-    use_mu_guidance: bool = False  # Enable contextual mu flowing between layers
-    clamp_mu_contextual: bool = False  # Clamp contextual mu before passing to next layer
-    mu_min: float = 0.0  # Learnable mu parameter clamp lower bound
-    mu_max: float = 2.0  # Learnable mu parameter clamp upper bound
-    mu_init_value: float = 0.0  # Initial value for layer-0 learnable mu_init
-    use_mu_norm: bool = False  # RMSNorm contextual mu before passing to next layer
-    mu_alpha_init: float = 1.0  # Learnable contextual mu residual scale
-    mu_context_min: float = -2.0  # Contextual mu clamp lower bound
-    mu_context_max: float = 2.0  # Contextual mu clamp upper bound
-
-    # === Ablation flags (disable components without monkey-patching) ===
-    disable_mu_guidance: bool = False   # Skip mu propagation between layers
-
     # === Normalization ===
     norm_type: str = "rmsnorm"  # rmsnorm, layernorm
     norm_eps: float = 1e-6
@@ -205,10 +191,6 @@ class ModelConfig:
             raise ValueError("shared_intermediate_size must be positive when set")
         if self.shared_expert_chunk_tokens < 0:
             raise ValueError("shared_expert_chunk_tokens must be non-negative")
-        if self.mu_min > self.mu_max:
-            raise ValueError("mu_min must be <= mu_max")
-        if self.mu_context_min > self.mu_context_max:
-            raise ValueError("mu_context_min must be <= mu_context_max")
         if self.mup_base_width <= 0:
             raise ValueError("mup_base_width must be positive")
         if self.token_frequencies is not None:
@@ -230,11 +212,6 @@ class ModelConfig:
     def num_kv_groups(self) -> int:
         """Number of query heads per KV head (for GQA)."""
         return self.num_attention_heads // self.num_key_value_heads
-
-    @property
-    def effective_mu_guidance(self) -> bool:
-        """Whether Mu guidance is active after compatibility flags are applied."""
-        return bool(self.use_mu_guidance) and not bool(self.disable_mu_guidance)
 
     @property
     def mup_width_mult(self) -> float:
@@ -473,7 +450,7 @@ def llama_1_5b_config() -> ModelConfig:
 
     Purpose: fair baseline comparison for the paper.
     Same: hidden_size, num_layers, num_heads, intermediate_size, vocab_size, max_pos
-    Removed: token routing, mu-guidance
+    Removed: token routing
     """
     return ModelConfig(
         hidden_size=2048,
@@ -488,7 +465,6 @@ def llama_1_5b_config() -> ModelConfig:
         num_experts=1,
         norm_type="rmsnorm",
         use_qk_norm=True,
-        use_mu_guidance=False,
     )
 
 
@@ -507,7 +483,6 @@ def i64_1b_config() -> ModelConfig:
         mlp_type="i64_swiglu",
         norm_type="i64_rmsnorm",
         use_qk_norm=True,
-        use_mu_guidance=True,
     )
 
 
@@ -525,7 +500,6 @@ def i64_3b_config() -> ModelConfig:
         mlp_type="i64_swiglu",
         norm_type="i64_rmsnorm",
         use_qk_norm=True,
-        use_mu_guidance=True,
     )
 
 
@@ -543,7 +517,6 @@ def i64_7b_config() -> ModelConfig:
         mlp_type="i64_swiglu",
         norm_type="i64_rmsnorm",
         use_qk_norm=True,
-        use_mu_guidance=True,
     )
 
 

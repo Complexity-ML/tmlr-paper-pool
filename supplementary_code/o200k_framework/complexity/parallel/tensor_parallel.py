@@ -396,7 +396,7 @@ def make_parallel(
 
     for name, child in module.named_children():
         if isinstance(child, nn.Linear):
-            if any(p in name for p in ('q_proj', 'k_proj', 'v_proj', 'mu_to_q', 'mu_to_k', 'mu_to_v')):
+            if any(p in name for p in ('q_proj', 'k_proj', 'v_proj')):
                 new_layer = ColumnParallelLinear(
                     child.in_features, child.out_features,
                     bias=child.bias is not None, gather_output=False,

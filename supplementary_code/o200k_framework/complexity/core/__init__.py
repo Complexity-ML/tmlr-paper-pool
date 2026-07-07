@@ -46,7 +46,6 @@ from complexity.core.attention import (
     MultiHeadAttention,
     MultiQueryAttention,
     RoutedGQA,
-    I64Attention,
 )
 
 from complexity.core.mlp import (
@@ -100,7 +99,6 @@ __all__ = [
     "GroupedQueryAttention",
     "MultiHeadAttention",
     "MultiQueryAttention",
-    "I64Attention",
     "RoutedGQA",
     # MLP
     "MLPBase",

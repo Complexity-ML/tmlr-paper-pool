@@ -1,37 +1,29 @@
-# COMPLEXITY-DEEP supplementary code
+# Supplementary code
 
-This archive contains two code paths:
-
-1. `o200k_framework/` — the code path used for the current reported o200k Token-Routed runs and ablations.
-2. The legacy files directly under `supplementary_code/` (`core/`, `models/`, `training/`, etc.) — a compact 32k-tokenizer reference implementation kept for architecture readability/backward compatibility.
-
-For reproducing the reported o200k experiments, use `o200k_framework/`.
-
-## Reported-run code path
+This archive contains the anonymized o200k training harness used for the reported Token-Routed lexical residual experiments.
 
 ```text
 supplementary_code/o200k_framework/
 ```
 
-This is a source snapshot of `complexity-framework` commit:
+The previous compact 32k reference implementation has been removed from this review artifact to avoid presenting stale code paths that do not correspond to the reported runs.
 
-```text
-anonymous-snapshot
-feat: add H200 1B ablation launcher
-```
+## Included code path
 
-It includes:
+`o200k_framework/` includes:
 
-- `complexity/` model and training package.
+- `complexity/`: model and training package.
 - `scripts/train_100m_o200k_tr_local.py`.
-- `scripts/ablations_100m/` local/H200 ablation launchers.
-- `configs/run_configs/ablations_100m/` seven 100M ablation configs.
+- `scripts/train_300m_tr_local.py` and `scripts/train_300m_dense_local.py`.
+- `configs/run_configs/ablations_100m/`: seven 100M ablation configs.
 - `configs/run_configs/300m_o200k_tr_rocm_scale.yaml`.
+- `scripts/ablations_100m/`: local diagnostics and 1B-token ablation launchers.
 - `tests/test_100m_ablation_configs.py`.
+- `tokenizer-o200k/tiktoken_config.json` for `o200k_base`.
 
-The included Token-Routed implementation contains the top-k auxiliary routing fix used by the reported ablations: random/modulo/round-robin controls do not receive Zipf-balanced auxiliary routes.
+The implementation in this artifact is the no-guidance lexical-routing code path used by the reported runs.
 
-## Quick install for o200k framework snapshot
+## Verify routing-control behavior
 
 ```bash
 cd supplementary_code/o200k_framework
@@ -40,15 +32,6 @@ python -m venv .venv
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch
 python -m pip install -e '.[cuda,dev]'
-```
-
-For CPU-only inspection, install a CPU PyTorch wheel instead of the CUDA wheel.
-
-## Verify routing-control behavior
-
-```bash
-cd supplementary_code/o200k_framework
-. .venv/bin/activate
 PYTHONPATH=. pytest tests/test_100m_ablation_configs.py -q
 ```
 
@@ -64,40 +47,19 @@ The seven ablations are:
 
 ```text
 100m_zipf_shared
+100m_dense_residual
 100m_zipf_no_shared
 100m_modulo_shared
 100m_random_shared
 100m_round_robin_shared
 100m_shared_only
-100m_dense_residual
 ```
 
-On one H200, the provided launcher runs 1B tokens per ablation:
-
-```bash
-cd supplementary_code/o200k_framework
-. .venv/bin/activate
-PYTHON=python scripts/ablations_100m/run_h200_1b_all.sh
-```
-
-Budget per run:
+Each 1B-token run uses:
 
 ```text
 1908 steps × batch 256 × seq 2048 = 1.000341504B tokens
 ```
-
-## Legacy 32k reference code
-
-The older compact implementation under `supplementary_code/core`, `supplementary_code/models`, and `supplementary_code/training` is not the source of the current o200k ablation results. It is retained as a smaller readable reference implementation.
-
-Important differences from the reported-run path:
-
-- 32k tokenizer instead of o200k.
-- No random/modulo/round-robin ablation harness.
-- Simpler top-k scheme.
-- Different model-size accounting because of vocabulary size.
-
-Do not use the legacy 32k path to reproduce the o200k ablation tables.
 
 ## License
 

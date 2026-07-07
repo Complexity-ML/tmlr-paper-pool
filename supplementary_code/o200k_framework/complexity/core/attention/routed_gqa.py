@@ -105,7 +105,6 @@ class RoutedGQA(AttentionBase):
         past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
         sort_idx: Optional[torch.Tensor] = None,
-        mu_prev: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """
         Forward pass for Routed GQA.
@@ -113,7 +112,6 @@ class RoutedGQA(AttentionBase):
         Args:
             hidden_states: [batch, seq_len, hidden_size]
             sort_idx: [N] precomputed argsort for routing (reuse across layers)
-            mu_prev: [batch, seq_len, hidden_size] mu guidance (unused for now,
                 accepted for interface compatibility with GQA)
         """
         batch_size, seq_len, _ = hidden_states.shape

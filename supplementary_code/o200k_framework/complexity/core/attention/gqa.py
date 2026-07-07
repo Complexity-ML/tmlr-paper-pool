@@ -5,8 +5,7 @@ GQA uses fewer KV heads than Q heads, reducing memory and compute
 while maintaining quality. When num_kv_heads=1, it becomes MQA.
 When num_kv_heads=num_heads, it becomes standard MHA.
 
-Supports optional Mu-guided attention by adding learned projections from the
-previous layer's Mu state into K, Q, and V.
+Implements grouped-query attention for the lexical routing experiments.
 """
 
 import math
@@ -50,14 +49,6 @@ class GroupedQueryAttention(AttentionBase):
         self.v_proj = nn.Linear(self.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
-        # Mu-to-KQV projections are allocated only when Mu is enabled; dense
-        # baselines should not count dead parameters that never run.
-        self.use_mu_guidance = bool(getattr(config, "use_mu_guidance", False))
-        if self.use_mu_guidance:
-            self.mu_to_k = nn.Linear(self.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-            self.mu_to_q = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=False)
-            self.mu_to_v = nn.Linear(self.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
-
         # QK normalization stabilizes attention logits on small and large runs.
         self.use_qk_norm = config.use_qk_norm
         if self.use_qk_norm:
@@ -100,7 +91,6 @@ class GroupedQueryAttention(AttentionBase):
         attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
-        mu_prev: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """
@@ -125,15 +115,6 @@ class GroupedQueryAttention(AttentionBase):
         w_kqv = torch.cat([self.k_proj.weight, self.q_proj.weight, self.v_proj.weight], dim=0)
         kqv = F.linear(hidden_states, w_kqv)
         k, q, v = kqv.split([k_dim, q_dim, v_dim], dim=-1)
-        if self.use_mu_guidance and mu_prev is not None:
-            if mu_prev.shape != hidden_states.shape:
-                raise ValueError(
-                    "mu_prev must match hidden_states shape "
-                    f"{tuple(hidden_states.shape)}, got {tuple(mu_prev.shape)}"
-                )
-            k = k + self.mu_to_k(mu_prev)
-            q = q + self.mu_to_q(mu_prev)
-            v = v + self.mu_to_v(mu_prev)
 
         # Reshape to [batch, heads, seq, head_dim]
         q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
