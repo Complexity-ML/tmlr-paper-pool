@@ -552,39 +552,46 @@ Specialization type & Lexical & Semantic & Standard MoE \\
 \subsection{Controlled 100M Ablation Preview (1B tokens)}
 \label{sec:ablation_100m_preview}
 
-We are also running a seven-way 100M ablation suite designed to isolate the contribution of the shared dense path and the lexical routed residual branch. The suite includes dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared, round-robin shared, and shared-only variants. The first two completed $2\times$B200 runs compare the matched dense residual baseline against the Zipf shared lexical-residual variant at the same token budget: $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ sequence length 2048 $=1.0003$B tokens. These results are an ablation-scale preview, not a replacement for the 300M scaling comparison below.
+We are also running a seven-way 100M ablation suite designed to isolate the contribution of the shared dense path and the lexical routed residual branch. Each run uses the same $2\times$B200 token budget: $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ sequence length 2048 $=1.0003$B tokens. Table~\ref{tab:100m_b200_ablation} reports the six completed runs so far: dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared, and round-robin shared. These results are an ablation-scale preview, not a replacement for the 300M scaling comparison below.
 
-The Zipf shared variant is already ahead of the dense baseline in both logged final training loss and validation loss: at the last logged training point (step 950, $0.996$B tokens), Zipf shared reaches 4.8205 versus 4.8244 for dense; at the best validation checkpoint (step 750, $0.786$B tokens), Zipf shared reaches 4.8887 versus 4.8958 for dense. This is consistent with the framing that the routed branch is useful as a residual lexical specialization path on top of a shared dense MLP backbone. Dense is faster in the current implementation (397k vs. 321k tok/s near the end of these two runs), so this table is matched-token quality evidence rather than a matched-wall-clock efficiency claim.
+The ordering is informative. Zipf shared is the best completed variant and is ahead of the matched dense residual baseline in both logged final training loss and validation loss: at the last logged training point (step 950, $0.996$B tokens), Zipf shared reaches 4.8205 versus 4.8244 for dense; at the best validation checkpoint (step 750, $0.786$B tokens), Zipf shared reaches 4.8887 versus 4.8958 for dense. Modulo and round-robin shared are close but remain behind dense, random shared is substantially worse, and Zipf no-shared degrades strongly. This pattern suggests that lexical token identity is a meaningful routing object only when paired with a shared dense backbone and a frequency-aware partition: the routed branch acts as a residual lexical specialization path, not as a replacement for dense MLP computation.
+
+Dense is faster in the current training implementation (397k vs. 321k tok/s near the end for Zipf shared), so these are matched-token quality comparisons rather than matched-wall-clock efficiency claims.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_100m_b200_train_curves.png}
-\caption{First completed 100M ablation curves on $2\times$B200, matched at 1.0003B tokens. The Zipf shared lexical-residual variant finishes slightly ahead of the matched dense residual baseline on training loss.}
-\label{fig:100m_b200_train_curves}
+\includegraphics[width=0.9\textwidth]{fig_100m_b200_ablation_train_curves.png}
+\caption{Completed 100M ablation training curves on $2\times$B200, matched at 1.0003B tokens. Zipf shared finishes slightly ahead of the matched dense residual baseline; modulo and round-robin shared remain close but behind, while random shared and Zipf no-shared underperform.}
+\label{fig:100m_b200_ablation_train_curves}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.72\textwidth]{fig_100m_b200_eval_curves.png}
-\caption{Validation checkpoints for the first two completed 100M ablation runs. Zipf shared reaches the lower validation loss at the best checkpoint observed so far (step 750).}
-\label{fig:100m_b200_eval_curves}
+\includegraphics[width=0.78\textwidth]{fig_100m_b200_ablation_eval_ranking.png}
+\caption{Best validation loss ranking for the completed 100M B200 ablations. Lower is better. Zipf-balanced shared routing is the best completed variant and the only completed routed variant ahead of the dense residual baseline.}
+\label{fig:100m_b200_ablation_eval_ranking}
 \end{figure}
 
 \begin{table}[!htbp]
 \centering
 \small
-\caption{First two completed 100M ablation runs on $2\times$B200. Negative gap means Zipf shared is ahead of dense.}
-\label{tab:100m_b200_first_ablation}
+\caption{Completed 100M ablation runs on $2\times$B200. All rows use the same 1.0003B-token budget; best validation loss occurs at step 750 for all completed runs.}
+\label{tab:100m_b200_ablation}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Metric} & \textbf{Dense residual} & \textbf{Zipf shared} & \textbf{Gap (Zipf $-$ Dense)} \\
+\textbf{Variant} & \textbf{Train loss @ 950} & \textbf{Best val. loss @ 750} & \textbf{Tok/s near end} \\
 \midrule
-Train loss @ step 950 & 4.8244 & \textbf{4.8205} & \textbf{$-0.0039$} \\
-Best validation loss @ step 750 & 4.8958 & \textbf{4.8887} & \textbf{$-0.0070$} \\
-Throughput near end & \textbf{397k tok/s} & 321k tok/s & --- \\
+Zipf shared & \textbf{4.8205} & \textbf{4.8887} & 321k \\
+Dense residual & 4.8244 & 4.8958 & \textbf{397k} \\
+Modulo shared & 4.8320 & 4.9016 & 321k \\
+Round-robin shared & 4.8384 & 4.9072 & 321k \\
+Random shared & 4.8875 & 4.9577 & 318k \\
+Zipf no-shared & 4.9693 & 5.0393 & 334k \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\FloatBarrier
 
 \FloatBarrier
 

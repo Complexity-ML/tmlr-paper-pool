@@ -552,39 +552,46 @@ Type sp\'{e}cialisation & Lexicale & S\'{e}mantique & MoE standard \\
 \subsection{Aper\c{c}u d'ablation contr\^{o}l\'{e}e 100M (1B tokens)}
 \label{sec:ablation_100m_preview}
 
-Nous ex\'{e}cutons \'{e}galement une suite d'ablation 100M en sept variantes pour isoler la contribution du chemin dense partag\'{e} et de la branche lexicale rout\'{e}e r\'{e}siduelle. La suite inclut dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared, round-robin shared et shared-only. Les deux premiers runs termin\'{e}s sur $2\times$B200 comparent la baseline dense residual appari\'{e}e \`{a} la variante Zipf shared lexical-residual au m\^{e}me budget de tokens : $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ longueur 2048 $=1{,}0003$B tokens. Ces r\'{e}sultats sont un aper\c{c}u \`{a} l'\'{e}chelle d'ablation, pas un remplacement de la comparaison de scaling 300M ci-dessous.
+Nous ex\'{e}cutons \'{e}galement une suite d'ablation 100M en sept variantes pour isoler la contribution du chemin dense partag\'{e} et de la branche lexicale rout\'{e}e r\'{e}siduelle. Chaque run utilise le m\^{e}me budget de tokens sur $2\times$B200 : $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ longueur 2048 $=1{,}0003$B tokens. La Table~\ref{tab:100m_b200_ablation} rapporte les six runs termin\'{e}s pour l'instant : dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared et round-robin shared. Ces r\'{e}sultats sont un aper\c{c}u \`{a} l'\'{e}chelle d'ablation, pas un remplacement de la comparaison de scaling 300M ci-dessous.
 
-La variante Zipf shared est d\'{e}j\`{a} devant la baseline dense sur la perte train finale logg\'{e}e et sur la perte validation : au dernier point train logg\'{e} (step 950, $0{,}996$B tokens), Zipf shared atteint 4,8205 contre 4,8244 pour dense ; au meilleur checkpoint validation (step 750, $0{,}786$B tokens), Zipf shared atteint 4,8887 contre 4,8958 pour dense. Cela est coh\'{e}rent avec le framing selon lequel la branche rout\'{e}e est utile comme chemin de sp\'{e}cialisation lexicale r\'{e}siduel au-dessus d'un backbone MLP dense partag\'{e}. Dense est plus rapide dans l'impl\'{e}mentation actuelle (397k contre 321k tok/s pr\`{e}s de la fin de ces deux runs) ; cette table constitue donc une \'{e}vidence de qualit\'{e} \`{a} tokens appari\'{e}s, pas une claim d'efficacit\'{e} wall-clock appari\'{e}e.
+L'ordre obtenu est informatif. Zipf shared est la meilleure variante termin\'{e}e et se place devant la baseline dense residual appari\'{e}e sur la perte train finale logg\'{e}e et sur la perte validation : au dernier point train logg\'{e} (step 950, $0{,}996$B tokens), Zipf shared atteint 4,8205 contre 4,8244 pour dense ; au meilleur checkpoint validation (step 750, $0{,}786$B tokens), Zipf shared atteint 4,8887 contre 4,8958 pour dense. Modulo et round-robin shared restent proches mais derri\`{e}re dense, random shared est nettement moins bon, et Zipf no-shared se d\'{e}grade fortement. Ce pattern sugg\`{e}re que l'identit\'{e} lexicale des tokens est un objet de routage pertinent seulement lorsqu'elle est associ\'{e}e \`{a} un backbone dense partag\'{e} et \`{a} une partition frequency-aware : la branche rout\'{e}e agit comme un chemin de sp\'{e}cialisation lexicale r\'{e}siduel, pas comme un remplacement du calcul MLP dense.
+
+Dense est plus rapide dans l'impl\'{e}mentation training actuelle (397k contre 321k tok/s pr\`{e}s de la fin pour Zipf shared) ; ces comparaisons sont donc \`{a} tokens appari\'{e}s, pas des claims d'efficacit\'{e} wall-clock appari\'{e}e.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_100m_b200_train_curves.png}
-\caption{Deux premi\`{e}res courbes d'ablation 100M termin\'{e}es sur $2\times$B200, appari\'{e}es \`{a} 1,0003B tokens. La variante Zipf shared lexical-residual termine l\'{e}g\`{e}rement devant la baseline dense residual en perte train.}
-\label{fig:100m_b200_train_curves}
+\includegraphics[width=0.9\textwidth]{fig_100m_b200_ablation_train_curves.png}
+\caption{Courbes train des ablations 100M termin\'{e}es sur $2\times$B200, appari\'{e}es \`{a} 1,0003B tokens. Zipf shared termine l\'{e}g\`{e}rement devant la baseline dense residual ; modulo et round-robin shared restent proches mais derri\`{e}re, tandis que random shared et Zipf no-shared sous-performent.}
+\label{fig:100m_b200_ablation_train_curves}
 \end{figure}
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.72\textwidth]{fig_100m_b200_eval_curves.png}
-\caption{Checkpoints de validation pour les deux premiers runs d'ablation 100M termin\'{e}s. Zipf shared obtient la plus basse perte validation au meilleur checkpoint observ\'{e} pour l'instant (step 750).}
-\label{fig:100m_b200_eval_curves}
+\includegraphics[width=0.78\textwidth]{fig_100m_b200_ablation_eval_ranking.png}
+\caption{Classement par meilleure perte validation pour les ablations 100M B200 termin\'{e}es. Plus bas est meilleur. Le routage Zipf-balanced shared est la meilleure variante termin\'{e}e et la seule variante rout\'{e}e termin\'{e}e devant la baseline dense residual.}
+\label{fig:100m_b200_ablation_eval_ranking}
 \end{figure}
 
 \begin{table}[!htbp]
 \centering
 \small
-\caption{Deux premiers runs d'ablation 100M termin\'{e}s sur $2\times$B200. Un gap n\'{e}gatif signifie que Zipf shared est devant dense.}
-\label{tab:100m_b200_first_ablation}
+\caption{Runs d'ablation 100M termin\'{e}s sur $2\times$B200. Toutes les lignes utilisent le m\^{e}me budget de 1,0003B tokens ; la meilleure validation se produit au step 750 pour tous les runs termin\'{e}s.}
+\label{tab:100m_b200_ablation}
 \begin{tabular}{lccc}
 \toprule
-\textbf{M\'{e}trique} & \textbf{Dense residual} & \textbf{Zipf shared} & \textbf{Gap (Zipf $-$ Dense)} \\
+\textbf{Variante} & \textbf{Train loss @ 950} & \textbf{Meilleure val. @ 750} & \textbf{Tok/s fin} \\
 \midrule
-Train loss @ step 950 & 4,8244 & \textbf{4,8205} & \textbf{$-0,0039$} \\
-Meilleure validation @ step 750 & 4,8958 & \textbf{4,8887} & \textbf{$-0,0070$} \\
-Throughput pr\`{e}s de la fin & \textbf{397k tok/s} & 321k tok/s & --- \\
+Zipf shared & \textbf{4,8205} & \textbf{4,8887} & 321k \\
+Dense residual & 4,8244 & 4,8958 & \textbf{397k} \\
+Modulo shared & 4,8320 & 4,9016 & 321k \\
+Round-robin shared & 4,8384 & 4,9072 & 321k \\
+Random shared & 4,8875 & 4,9577 & 318k \\
+Zipf no-shared & 4,9693 & 5,0393 & 334k \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\FloatBarrier
 
 \FloatBarrier
 
