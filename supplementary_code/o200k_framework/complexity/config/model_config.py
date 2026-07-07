@@ -1,0 +1,586 @@
+"""
+Unified Model Configuration for framework-complexity.
+
+This is the single source of truth for model architecture configuration.
+Users can define any architecture by setting these parameters.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
+import json
+import yaml
+import torch
+
+
+@dataclass
+class ModelConfig:
+    """
+    Unified configuration for all model architectures.
+
+    This config supports:
+    - Llama-style models (GQA, SwiGLU, RMSNorm)
+    - Mistral-style models (sliding window attention)
+    - GPT-style models (MHA, GELU, LayerNorm)
+    - Complexity custom models (Token-Routed MoE)
+
+    Example:
+        # Llama-style
+        config = ModelConfig(
+            hidden_size=4096,
+            num_hidden_layers=32,
+            num_attention_heads=32,
+            num_key_value_heads=8,  # GQA
+            attention_type="gqa",
+            mlp_type="swiglu",
+            norm_type="rmsnorm",
+        )
+
+        # Complexity with MoE
+        config = ModelConfig(
+            hidden_size=4096,
+            num_hidden_layers=32,
+            num_attention_heads=32,
+            mlp_type="token_routed",
+            num_experts=4,
+        )
+    """
+
+    # === Model Architecture ===
+    hidden_size: int = 768
+    num_hidden_layers: int = 12
+    intermediate_size: Optional[int] = None  # Auto: hidden_size * 4 (or 8/3 for SwiGLU)
+    vocab_size: int = 32000
+
+    # === Attention ===
+    num_attention_heads: int = 12
+    num_key_value_heads: Optional[int] = None  # None = MHA, < num_heads = GQA, 1 = MQA
+    attention_type: str = "gqa"  # gqa, mha, mqa
+    attention_dropout: float = 0.0
+    use_qk_norm: bool = True
+    sliding_window: Optional[int] = None  # None = full attention
+
+    # === Position Embeddings ===
+    max_position_embeddings: int = 2048
+    rope_theta: float = 10000.0
+    rope_type: str = "standard"  # standard, partial_rope, yarn, dynamic_ntk
+    rope_fraction: float = 1.0  # Fraction of head_dim to apply RoPE to (1.0 = full, 0.5 = partial)
+
+    # === MLP / FFN ===
+    mlp_type: str = "token_routed"  # token_routed, swiglu, gelu
+    hidden_act: str = "silu"  # silu, gelu, relu
+
+    # === MoE (Token-Routed) ===
+    num_experts: int = 1  # 1 = standard MLP, >1 = MoE
+    token_frequencies: Optional[torch.Tensor] = None  # Zipf-balanced routing
+    routing_strategy: str = "zipf"  # zipf, modulo, round_robin, random, lsh_hidden
+    lsh_routing: bool = False  # Route on a fixed random-hyperplane hash of h (semantic), not the token id
+    lsh_bits: int = 0  # Number of hyperplanes (0 = ceil(log2(num_experts)))
+    lsh_from_layer: int = 0  # LSH routing only for layers >= this index; earlier layers stay lexical
+    lsh_threshold_mode: str = "zero"  # zero is stable for inference; batch_median maximises training-batch balance.
+    shared_expert: bool = True  # Shared lexical expert: dense MLP + routed experts
+    shared_intermediate_size: Optional[int] = None  # Shared expert size (default: intermediate_size)
+    shared_expert_chunk_tokens: int = 0  # 0 = one dense pass; >0 chunks token dimension to reduce shared SwiGLU activation peak.
+    use_shared_routed_gates: bool = False  # Learn scalar gates for shared vs routed expert outputs
+    shared_gate_init: float = 1.0  # Initial multiplier for shared expert output
+    routed_gate_init: float = 1.0  # Initial multiplier for routed expert output
+    top_k: int = 1  # Token-Routed top-K deterministic (1 = classic Zipf top-1; K>1 activates K Zipf-balanced expert routes)
+    top_k_primary_weight: Optional[float] = None  # K>1 blend weight for primary expert (default: 0.95)
+    static_expert_capacity: bool = False  # Use fixed per-expert dispatch capacity for torch.export / pipeline tracing
+    use_custom_kernels: Any = "auto"  # "auto", True, or False. ROCm defaults to PyTorch fallback in auto mode.
+    collect_moe_telemetry: bool = False  # Per-layer expert/RMS diagnostics. Disabled by default for throughput.
+    use_cggr: Any = "auto"  # "auto", True, or False. CGGR grouped-GEMM Triton path for TokenRoutedMLP when custom Triton is available.
+
+    # === Mu-Guidance ===
+    use_mu_guidance: bool = False  # Enable contextual mu flowing between layers
+    clamp_mu_contextual: bool = False  # Clamp contextual mu before passing to next layer
+    mu_min: float = 0.0  # Learnable mu parameter clamp lower bound
+    mu_max: float = 2.0  # Learnable mu parameter clamp upper bound
+    mu_init_value: float = 0.0  # Initial value for layer-0 learnable mu_init
+    use_mu_norm: bool = False  # RMSNorm contextual mu before passing to next layer
+    mu_alpha_init: float = 1.0  # Learnable contextual mu residual scale
+    mu_context_min: float = -2.0  # Contextual mu clamp lower bound
+    mu_context_max: float = 2.0  # Contextual mu clamp upper bound
+
+    # === Ablation flags (disable components without monkey-patching) ===
+    disable_mu_guidance: bool = False   # Skip mu propagation between layers
+
+    # === Normalization ===
+    norm_type: str = "rmsnorm"  # rmsnorm, layernorm
+    norm_eps: float = 1e-6
+
+    # === Embeddings ===
+    tie_word_embeddings: bool = True
+
+    # === Training ===
+    use_sdpa: bool = True  # Use Flash Attention via SDPA
+    use_cache: bool = True  # KV cache for generation
+
+    # === Initialization ===
+    initializer_range: float = 0.02
+
+    # === μP (Maximal Update Parametrization, Yang et al. 2022) ===
+    # When use_mup_init=True, hidden→hidden Linears (FFN gate/up/down,
+    # attention Q/K/V/O) are initialised with std = initializer_range /
+    # √(hidden_size / mup_base_width). Embeddings keep their base std.
+    # Combined with use_mup_attn_scale and use_mup_output_mult and the
+    # adamw_mup optimiser (LR side), this enables hyper-parameter
+    # transfer from a small proxy width (mup_base_width) to wider
+    # variants without re-tuning.
+    use_mup_init: bool = False
+    use_mup_attn_scale: bool = False     # Attention logits / d_head (vs / √d_head)
+    use_mup_output_mult: bool = False    # Divide lm_head output by width_mult
+    mup_base_width: int = 256            # Reference width (proxy size)
+
+    # === Extra (for custom extensions) ===
+    extra_config: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Validate and set defaults."""
+        # Auto-compute intermediate_size
+        if self.intermediate_size is None:
+            if self.mlp_type in ["swiglu", "silu", "geglu", "token_routed"]:
+                # SwiGLU uses 8/3 ratio (rounded to multiple of 256)
+                self.intermediate_size = int(self.hidden_size * 8 / 3)
+                self.intermediate_size = ((self.intermediate_size + 255) // 256) * 256
+            else:
+                # Standard FFN uses 4x
+                self.intermediate_size = self.hidden_size * 4
+
+        # Default num_key_value_heads for GQA
+        if self.num_key_value_heads is None:
+            if self.attention_type == "mqa":
+                self.num_key_value_heads = 1
+            elif self.attention_type == "mha":
+                self.num_key_value_heads = self.num_attention_heads
+            else:
+                # GQA default: 1/4 of heads (like Llama 2)
+                self.num_key_value_heads = max(1, self.num_attention_heads // 4)
+
+        # Validation
+        self._validate()
+
+    def _validate(self):
+        """Validate configuration."""
+        if self.hidden_size <= 0:
+            raise ValueError("hidden_size must be positive")
+        if self.num_hidden_layers <= 0:
+            raise ValueError("num_hidden_layers must be positive")
+        if self.intermediate_size is None or self.intermediate_size <= 0:
+            raise ValueError("intermediate_size must be positive")
+        if self.vocab_size <= 0:
+            raise ValueError("vocab_size must be positive")
+        if self.num_attention_heads <= 0:
+            raise ValueError("num_attention_heads must be positive")
+        if self.num_key_value_heads is None or self.num_key_value_heads <= 0:
+            raise ValueError("num_key_value_heads must be positive")
+        if self.hidden_size % self.num_attention_heads != 0:
+            raise ValueError(
+                f"hidden_size ({self.hidden_size}) must be divisible by "
+                f"num_attention_heads ({self.num_attention_heads})"
+            )
+        if self.num_attention_heads % self.num_key_value_heads != 0:
+            raise ValueError(
+                f"num_attention_heads ({self.num_attention_heads}) must be "
+                f"divisible by num_key_value_heads ({self.num_key_value_heads})"
+            )
+        if not 0.0 <= self.attention_dropout < 1.0:
+            raise ValueError("attention_dropout must be in [0, 1)")
+        if not 0.0 < self.rope_fraction <= 1.0:
+            raise ValueError("rope_fraction must be in (0, 1]")
+        if self.sliding_window is not None and self.sliding_window <= 0:
+            raise ValueError("sliding_window must be positive when set")
+        if self.num_experts <= 0:
+            raise ValueError("num_experts must be positive")
+        if self.top_k <= 0:
+            raise ValueError("top_k must be positive")
+        if self.top_k > self.num_experts:
+            raise ValueError("top_k cannot exceed num_experts")
+        if self.top_k_primary_weight is not None and not 0.0 <= self.top_k_primary_weight <= 1.0:
+            raise ValueError("top_k_primary_weight must be in [0, 1]")
+        if self.routing_strategy not in {"zipf", "modulo", "round_robin", "random", "lsh_hidden"}:
+            raise ValueError("routing_strategy must be one of zipf, modulo, round_robin, random, lsh_hidden")
+        if self.lsh_threshold_mode not in {"batch_median", "zero"}:
+            raise ValueError("lsh_threshold_mode must be 'batch_median' or 'zero'")
+        if self.shared_intermediate_size is not None and self.shared_intermediate_size <= 0:
+            raise ValueError("shared_intermediate_size must be positive when set")
+        if self.shared_expert_chunk_tokens < 0:
+            raise ValueError("shared_expert_chunk_tokens must be non-negative")
+        if self.mu_min > self.mu_max:
+            raise ValueError("mu_min must be <= mu_max")
+        if self.mu_context_min > self.mu_context_max:
+            raise ValueError("mu_context_min must be <= mu_context_max")
+        if self.mup_base_width <= 0:
+            raise ValueError("mup_base_width must be positive")
+        if self.token_frequencies is not None:
+            if not isinstance(self.token_frequencies, torch.Tensor):
+                raise ValueError("token_frequencies must be a torch.Tensor")
+            if self.token_frequencies.ndim != 1:
+                raise ValueError("token_frequencies must be a 1D tensor")
+            if self.token_frequencies.numel() != self.vocab_size:
+                raise ValueError(
+                    f"token_frequencies length ({self.token_frequencies.numel()}) "
+                    f"must match vocab_size ({self.vocab_size})"
+                )
+    @property
+    def head_dim(self) -> int:
+        """Dimension per attention head."""
+        return self.hidden_size // self.num_attention_heads
+
+    @property
+    def num_kv_groups(self) -> int:
+        """Number of query heads per KV head (for GQA)."""
+        return self.num_attention_heads // self.num_key_value_heads
+
+    @property
+    def effective_mu_guidance(self) -> bool:
+        """Whether Mu guidance is active after compatibility flags are applied."""
+        return bool(self.use_mu_guidance) and not bool(self.disable_mu_guidance)
+
+    @property
+    def mup_width_mult(self) -> float:
+        """μP width multiplier: hidden_size / mup_base_width.
+
+        Returns 1.0 when at base width or μP disabled — in that case the
+        scaling factor 1/√width_mult equals 1 and is a no-op.
+        """
+        if not getattr(self, "use_mup_init", False):
+            return 1.0
+        return float(self.hidden_size) / float(self.mup_base_width)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary (skips non-serializable fields like Tensors)."""
+        result = {}
+        for k, v in self.__dict__.items():
+            if k.startswith("_"):
+                continue
+            if isinstance(v, torch.Tensor):
+                continue  # token_frequencies etc. — not JSON serializable
+            result[k] = v
+        return result
+
+    def save(self, path: str):
+        """Save config to file (JSON or YAML)."""
+        data = self.to_dict()
+        with open(path, "w") as f:
+            if path.endswith(".yaml") or path.endswith(".yml"):
+                yaml.dump(data, f, default_flow_style=False)
+            else:
+                json.dump(data, f, indent=2)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
+        """Create config from dictionary, ignoring unknown keys."""
+        import dataclasses
+        valid_keys = {f.name for f in dataclasses.fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_keys}
+        if filtered.get("routing_strategy") not in {None, "zipf", "modulo", "round_robin", "random", "lsh_hidden"}:
+            filtered["routing_strategy"] = "zipf"
+        return cls(**filtered)
+
+    @classmethod
+    def load(cls, path: str) -> "ModelConfig":
+        """Load config from file (JSON or YAML)."""
+        with open(path, "r") as f:
+            if path.endswith(".yaml") or path.endswith(".yml"):
+                data = yaml.safe_load(f)
+            else:
+                data = json.load(f)
+        return cls.from_dict(data)
+
+    def __repr__(self) -> str:
+        params = ", ".join(f"{k}={v}" for k, v in self.to_dict().items() if v is not None)
+        return f"ModelConfig({params})"
+
+
+# Preset configurations
+def llama_7b_config() -> ModelConfig:
+    """Llama 2 7B configuration."""
+    return ModelConfig(
+        hidden_size=4096,
+        num_hidden_layers=32,
+        num_attention_heads=32,
+        num_key_value_heads=32,  # Llama 2 7B uses MHA
+        intermediate_size=11008,
+        vocab_size=32000,
+        max_position_embeddings=4096,
+        attention_type="mha",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        rope_theta=10000.0,
+    )
+
+
+def llama_70b_config() -> ModelConfig:
+    """Llama 2 70B configuration (GQA)."""
+    return ModelConfig(
+        hidden_size=8192,
+        num_hidden_layers=80,
+        num_attention_heads=64,
+        num_key_value_heads=8,  # GQA with 8 KV heads
+        intermediate_size=28672,
+        vocab_size=32000,
+        max_position_embeddings=4096,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        rope_theta=10000.0,
+    )
+
+
+def mistral_7b_config() -> ModelConfig:
+    """Mistral 7B configuration (sliding window)."""
+    return ModelConfig(
+        hidden_size=4096,
+        num_hidden_layers=32,
+        num_attention_heads=32,
+        num_key_value_heads=8,  # GQA
+        intermediate_size=14336,
+        vocab_size=32000,
+        max_position_embeddings=32768,
+        sliding_window=4096,  # Sliding window attention
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        rope_theta=10000.0,
+    )
+
+
+def complexity_7b_config() -> ModelConfig:
+    """Complexity 7B with Token-Routed MoE."""
+    return ModelConfig(
+        hidden_size=4096,
+        num_hidden_layers=32,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        intermediate_size=11008,
+        vocab_size=100000,
+        max_position_embeddings=8192,
+        attention_type="gqa",
+        mlp_type="token_routed",
+        num_experts=4,
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+    )
+
+
+def gpt2_config() -> ModelConfig:
+    """GPT-2 Small configuration."""
+    return ModelConfig(
+        hidden_size=768,
+        num_hidden_layers=12,
+        num_attention_heads=12,
+        num_key_value_heads=12,  # MHA
+        intermediate_size=3072,
+        vocab_size=50257,
+        max_position_embeddings=1024,
+        attention_type="mha",
+        mlp_type="gelu",
+        norm_type="layernorm",
+        hidden_act="gelu",
+        use_qk_norm=False,
+    )
+
+
+# === Complexity Size Presets ===
+def complexity_tiny_config() -> ModelConfig:
+    """Complexity Tiny (~15M params) - for testing and debugging."""
+    return ModelConfig(
+        hidden_size=256,
+        num_hidden_layers=6,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        intermediate_size=704,
+        vocab_size=32000,
+        max_position_embeddings=2048,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+    )
+
+
+def complexity_small_config() -> ModelConfig:
+    """Complexity Small (~50M params) - for rapid prototyping."""
+    return ModelConfig(
+        hidden_size=512,
+        num_hidden_layers=8,
+        num_attention_heads=8,
+        num_key_value_heads=4,
+        intermediate_size=1408,
+        vocab_size=32000,
+        max_position_embeddings=2048,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+    )
+
+
+def complexity_base_config() -> ModelConfig:
+    """Complexity Base (~125M params) - balanced size for training."""
+    return ModelConfig(
+        hidden_size=768,
+        num_hidden_layers=12,
+        num_attention_heads=12,
+        num_key_value_heads=4,
+        intermediate_size=2048,
+        vocab_size=32000,
+        max_position_embeddings=2048,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+    )
+
+
+def complexity_large_config() -> ModelConfig:
+    """Complexity Large (~350M params) - for serious experiments."""
+    return ModelConfig(
+        hidden_size=1024,
+        num_hidden_layers=24,
+        num_attention_heads=16,
+        num_key_value_heads=4,
+        intermediate_size=2816,
+        vocab_size=32000,
+        max_position_embeddings=4096,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+    )
+
+
+def complexity_xl_config() -> ModelConfig:
+    """Complexity XL (~1B params) - large scale training."""
+    return ModelConfig(
+        hidden_size=2048,
+        num_hidden_layers=24,
+        num_attention_heads=16,
+        num_key_value_heads=4,
+        intermediate_size=5632,
+        vocab_size=32000,
+        max_position_embeddings=4096,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+    )
+
+
+# === Dense Baselines (for paper comparisons) ===
+def llama_1_5b_config() -> ModelConfig:
+    """Dense Llama 1.5B — same dimensions as complexity-deep, no MoE.
+
+    Purpose: fair baseline comparison for the paper.
+    Same: hidden_size, num_layers, num_heads, intermediate_size, vocab_size, max_pos
+    Removed: token routing, mu-guidance
+    """
+    return ModelConfig(
+        hidden_size=2048,
+        num_hidden_layers=24,
+        num_attention_heads=16,
+        num_key_value_heads=8,  # GQA like the original
+        intermediate_size=5632,
+        vocab_size=32000,
+        max_position_embeddings=2048,
+        attention_type="gqa",
+        mlp_type="swiglu",
+        num_experts=1,
+        norm_type="rmsnorm",
+        use_qk_norm=True,
+        use_mu_guidance=False,
+    )
+
+
+# === I64 Integer Presets (train float, deploy INT8) ===
+def i64_1b_config() -> ModelConfig:
+    """I64 1.5B — Integer-native, train float deploy INT8."""
+    return ModelConfig(
+        hidden_size=2048,
+        num_hidden_layers=24,
+        num_attention_heads=16,
+        num_key_value_heads=4,
+        intermediate_size=5632,
+        vocab_size=32000,
+        max_position_embeddings=2048,
+        attention_type="i64",
+        mlp_type="i64_swiglu",
+        norm_type="i64_rmsnorm",
+        use_qk_norm=True,
+        use_mu_guidance=True,
+    )
+
+
+def i64_3b_config() -> ModelConfig:
+    """I64 3B — Integer-native, train float deploy INT8."""
+    return ModelConfig(
+        hidden_size=2560,
+        num_hidden_layers=32,
+        num_attention_heads=20,
+        num_key_value_heads=5,
+        intermediate_size=7168,
+        vocab_size=32000,
+        max_position_embeddings=4096,
+        attention_type="i64",
+        mlp_type="i64_swiglu",
+        norm_type="i64_rmsnorm",
+        use_qk_norm=True,
+        use_mu_guidance=True,
+    )
+
+
+def i64_7b_config() -> ModelConfig:
+    """I64 7B — Integer-native, train float deploy INT8."""
+    return ModelConfig(
+        hidden_size=4096,
+        num_hidden_layers=32,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        intermediate_size=11008,
+        vocab_size=32000,
+        max_position_embeddings=4096,
+        attention_type="i64",
+        mlp_type="i64_swiglu",
+        norm_type="i64_rmsnorm",
+        use_qk_norm=True,
+        use_mu_guidance=True,
+    )
+
+
+# Registry of preset configs
+PRESET_CONFIGS = {
+    # Complexity size ladder
+    "complexity-tiny": complexity_tiny_config,
+    "complexity-small": complexity_small_config,
+    "complexity-base": complexity_base_config,
+    "complexity-large": complexity_large_config,
+    "complexity-xl": complexity_xl_config,
+    # Complexity with MoE
+    "complexity-7b": complexity_7b_config,
+    # Reference architectures
+    "llama-7b": llama_7b_config,
+    "llama-70b": llama_70b_config,
+    "mistral-7b": mistral_7b_config,
+    "gpt2": gpt2_config,
+    # Dense baselines (paper comparisons)
+    "llama-1.5b": llama_1_5b_config,
+    "dense-1.5b": llama_1_5b_config,
+    # I64 Integer presets
+    "i64-1b": i64_1b_config,
+    "i64-3b": i64_3b_config,
+    "i64-7b": i64_7b_config,
+    # Aliases
+    "tiny": complexity_tiny_config,
+    "small": complexity_small_config,
+    "base": complexity_base_config,
+    "large": complexity_large_config,
+    "xl": complexity_xl_config,
+}
+
+
+def get_preset(name: str) -> ModelConfig:
+    """Get a preset configuration by name."""
+    if name not in PRESET_CONFIGS:
+        available = list(PRESET_CONFIGS.keys())
+        raise ValueError(f"Unknown preset: {name}. Available: {available}")
+    return PRESET_CONFIGS[name]()

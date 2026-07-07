@@ -8,7 +8,8 @@ initialization 1.0/0.1, and Mu-Guidance disabled unless explicitly enabled.
 
 Examples:
     python3 scripts/train_300m_tr_local.py --steps 20 --dataset random
-    python3 scripts/train_300m_tr_local.py --dataset text --text-file data/sample.txt --tokenizer ./tokenizer --bf16
+    python3 scripts/train_300m_tr_local.py --dataset text --text-file data/sample.txt --bf16
+    python3 scripts/train_300m_tr_local.py --dataset fineweb --token-frequency-file token_frequencies_32k.pt --bf16
 """
 
 from __future__ import annotations
@@ -48,6 +49,10 @@ logger = logging.getLogger("train_300m_tr_local")
 logging.getLogger("complexity.core.mlp.token_routed").setLevel(logging.WARNING)
 for noisy_logger in ("httpx", "httpcore", "huggingface_hub", "datasets"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
+
+SUPPLEMENTARY_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TOKENIZER_PATH = SUPPLEMENTARY_ROOT / "tokenizer"
 
 
 def make_config(args) -> ComplexityConfig:
@@ -154,6 +159,67 @@ def text_token_frequencies(path: str, tokenizer_path: str, vocab_size: int) -> t
     logger.info(
         f"Zipf routing frequencies: {int(freqs.sum().item()):,} tokens, "
         f"{int((freqs > 0).sum().item()):,} vocab entries"
+    )
+    return freqs
+
+
+def load_token_frequencies(path: str, vocab_size: int) -> torch.Tensor:
+    """Load precomputed token frequencies for Zipf-balanced routing.
+
+    Supported formats:
+      - .pt/.pth: a 1-D tensor or a dict containing token_frequencies/frequencies/freqs.
+      - .csv/.txt: one frequency per line, or token_id,frequency rows.
+    """
+    freq_path = Path(path)
+    if not freq_path.exists():
+        raise FileNotFoundError(f"Token frequency file not found: {freq_path}")
+
+    if freq_path.suffix in {".pt", ".pth"}:
+        obj = torch.load(freq_path, map_location="cpu")
+        if isinstance(obj, dict):
+            for key in ("token_frequencies", "frequencies", "freqs"):
+                if key in obj:
+                    obj = obj[key]
+                    break
+            else:
+                raise ValueError(
+                    f"{freq_path} is a dict but has no token_frequencies/frequencies/freqs key"
+                )
+        freqs = torch.as_tensor(obj, dtype=torch.float32).flatten()
+    else:
+        freqs = torch.zeros(vocab_size, dtype=torch.float32)
+        values: list[float] = []
+        with freq_path.open("r", encoding="utf-8") as f:
+            for line_no, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = [p.strip() for p in line.replace("\t", ",").split(",") if p.strip()]
+                if len(parts) == 1:
+                    values.append(float(parts[0]))
+                elif len(parts) >= 2:
+                    token_id = int(parts[0])
+                    if 0 <= token_id < vocab_size:
+                        freqs[token_id] = float(parts[1])
+                else:
+                    raise ValueError(f"Malformed frequency line {line_no} in {freq_path}")
+        if values:
+            if len(values) != vocab_size:
+                raise ValueError(
+                    f"Expected {vocab_size} frequency values in {freq_path}, got {len(values)}"
+                )
+            freqs = torch.tensor(values, dtype=torch.float32)
+
+    if freqs.numel() != vocab_size:
+        raise ValueError(
+            f"Token frequencies length ({freqs.numel()}) must match vocab_size ({vocab_size})"
+        )
+    freqs = freqs.float().clamp_min(0.0)
+    if float(freqs.sum().item()) <= 0.0:
+        raise ValueError(f"Token frequencies in {freq_path} sum to zero")
+    logger.info(
+        f"Zipf routing frequencies loaded: {freq_path} "
+        f"({int(freqs.sum().item()):,} tokens, {int((freqs > 0).sum().item()):,} vocab entries)"
     )
     return freqs
 
@@ -314,7 +380,7 @@ def main():
     parser = argparse.ArgumentParser(description="Local ~300M Token-Routed run")
     parser.add_argument("--dataset", choices=["random", "text", "fineweb"], default="random")
     parser.add_argument("--text-file", type=str, default=None)
-    parser.add_argument("--tokenizer", type=str, default="./tokenizer")
+    parser.add_argument("--tokenizer", type=str, default=str(DEFAULT_TOKENIZER_PATH))
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--seq-len", type=int, default=256)
@@ -359,16 +425,34 @@ def main():
         action="store_true",
         help="Disable token-frequency balanced routing when --dataset text.",
     )
+    parser.add_argument(
+        "--token-frequency-file",
+        type=str,
+        default=None,
+        help=(
+            "Precomputed 32k token-frequency file for Zipf-balanced routing. "
+            "Required for --dataset fineweb so the 300M TR run does not silently "
+            "fall back to modulo routing."
+        ),
+    )
     args = parser.parse_args()
 
     device, distributed, rank, local_rank, world_size = init_distributed(args.seed)
     is_main = rank == 0
     config = make_config(args)
-    if args.dataset == "text" and not args.no_zipf_from_text:
+    if args.token_frequency_file:
+        config.token_frequencies = load_token_frequencies(args.token_frequency_file, config.vocab_size)
+    elif args.dataset == "text" and not args.no_zipf_from_text:
         config.token_frequencies = text_token_frequencies(
             args.text_file,
             args.tokenizer,
             config.vocab_size,
+        )
+    elif args.dataset == "fineweb":
+        raise ValueError(
+            "The 300M TR paper run requires Zipf-balanced routing. For --dataset fineweb, "
+            "pass --token-frequency-file with precomputed 32k token frequencies; otherwise "
+            "the model would silently use modulo routing and would not reproduce the reported run."
         )
     raw_model = ComplexityModel(config).to(device)
     if args.grad_ckpt:

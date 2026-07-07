@@ -27,7 +27,7 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
-\title{COMPLEXITY-DEEP: A Language Model Architecture with Mu-Guided Attention and Token-Routed MLP}
+\title{COMPLEXITY-DEEP: Zipf-Balanced Deterministic Lexical Routing for Language Model MLPs}
 
 \author{\name Anonymous authors \\
       \addr Paper under double-blind review}
@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-We present COMPLEXITY-DEEP, a language model architecture built around deterministic lexical routing. The paper studies three components: (1) \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}, which assigns tokens to experts using an estimated corpus-frequency table, eliminating learned routers and auxiliary load-balancing losses; (2) \textbf{Shared Lexical Expert}, a dense MLP path shared by all tokens while routed experts specialize on lexical partitions; and (3) \textbf{Mu-Guided Attention}, where a latent state $\mu$ flows forward between adjacent layers to modulate K, Q, and V projections after the MLP. We give a formal analysis of the conditional capacity and compute trade-off induced by deterministic lexical partitions, and we explicitly distinguish vocabulary balance from corpus-frequency balance under Zipfian token distributions. Empirically, component ablations at 187M parameters (500M tokens) show that the full Token-Routed+Shared+Mu model improves average loss over a dense SwiGLU baseline. Our main scaling result is a corrected iso-parameter comparison at $\sim$300M parameters over 8B FineWeb-Edu tokens: a residual Token-Routed model without Mu-Guidance pays an early specialization cost, first beats the dense baseline at step 740 on logged train loss and step 750 on validation loss, and finishes the budget with a smoothed train-loss advantage of $-0.0163$.
+We present COMPLEXITY-DEEP, a language model architecture built around deterministic lexical routing. The paper studies two components: (1) \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}, which assigns tokens to experts using an estimated corpus-frequency table, eliminating learned routers and auxiliary load-balancing losses; and (2) \textbf{Shared Lexical Expert}, a dense MLP path shared by all tokens while routed experts specialize on lexical partitions. We give a formal analysis of the conditional capacity and compute trade-off induced by deterministic lexical partitions, and we explicitly distinguish vocabulary balance from corpus-frequency balance under Zipfian token distributions. Our main scaling result is a corrected iso-parameter comparison at $\sim$300M parameters over 8B FineWeb-Edu tokens: a residual Token-Routed model with a large shared branch and small Zipf-routed residual branch pays an early specialization cost, first beats the dense baseline at step 740 on logged train loss and step 750 on validation loss, and finishes the budget with a smoothed train-loss advantage of $-0.0163$.
 \end{abstract}
 
 %=============================================================================
@@ -56,16 +56,15 @@ We present COMPLEXITY-DEEP, a language model architecture built around determini
 Large Language Models (LLMs) have revolutionized natural language processing in recent years \citep{vaswani2017attention, brown2020language}. However, dominant architectures present several limitations:
 
 \begin{itemize}
-    \item \textbf{No inter-layer communication}: In standard Transformers, each layer processes independently without receiving guidance from the previous layer's computation.
     \item \textbf{Computational cost of MoE}: Mixture of Experts architectures \citep{shazeer2017outrageously, fedus2022switch} require complex load balancing and routing mechanisms.
     \item \textbf{Training instability}: Large models often suffer from numerical instabilities requiring careful hyperparameter tuning.
 \end{itemize}
 
-We propose COMPLEXITY-DEEP, an architecture family that addresses the first two limitations through deterministic lexical routing and optional inter-layer guidance:
+We propose COMPLEXITY-DEEP, an architecture family centered on deterministic lexical routing:
 
 \begin{enumerate}
     \item \textbf{Token-Routed MLP with Zipf-balanced greedy bin-packing}: A deterministic per-token routing that balances expected expert load under an estimated token-frequency distribution, eliminating both the learned router and auxiliary load-balancing losses.
-    \item \textbf{Mu-Guided Attention}: A mechanism where the latent state $\mu$ computed at layer $l$ (after the MLP) flows forward to layer $l+1$, influencing its K, Q, and V projections. This creates an inter-layer communication channel that carries expert-specific context from one layer to the next.
+    \item \textbf{Shared Lexical Expert}: A dense MLP path shared by all tokens, combined with small routed experts that specialize on fixed lexical partitions.
 \end{enumerate}
 
 %=============================================================================
@@ -94,7 +93,7 @@ RMSNorm \citep{zhang2019root} and QK-Normalization \citep{dehghani2023scaling} a
 
 COMPLEXITY-DEEP is a decoder-only architecture composed of $L$ identical layers. Each layer comprises:
 \begin{enumerate}
-    \item A multi-head attention block with Mu-Guidance
+    \item A multi-head attention block
     \item An MLP block with token routing
     \item Residual connections with pre-normalization (RMSNorm)
 \end{enumerate}
@@ -104,7 +103,7 @@ The hidden dimension is $d_{model}$, with $n_h$ attention heads and $n_{kv}$ key
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.4\textwidth,height=0.82\textheight,keepaspectratio]{architecture_complexity_deep.png}
-\caption{COMPLEXITY-DEEP architecture (187M parameters). Each decoder layer comprises: (1) GQA attention with Mu-Guided Q/K/V bias, (2) a Token-Routed MLP with 4 SwiGLU experts using deterministic Zipf routing and a shared expert, (3) a Mu-Guidance module that produces an equilibrium signal propagated to the next layer.}
+\caption{COMPLEXITY-DEEP architecture. Each decoder layer comprises GQA attention followed by a Token-Routed MLP with deterministic Zipf routing and a Shared Lexical Expert.}
 \label{fig:architecture}
 \end{figure}
 
@@ -169,41 +168,10 @@ Since deterministic routing ensures disjoint token sets ($T_i \cap T_j = \emptys
     \item Trivial deployment: F32/BF16 tensors with I64 indexing, natively compatible with PyTorch, ONNX, TensorRT without custom routing logic
 \end{itemize}
 
-\subsection{Mu-Guided Attention}
-\label{sec:mu_guidance}
-
-The central innovation of COMPLEXITY-DEEP is the introduction of a latent state $\mu$ that creates an inter-layer communication channel. At each layer $l$, the state $\mu^{(l-1)}$ computed by the \emph{previous} layer (after its MLP) flows forward to influence attention projections:
-\begin{align}
-\mathbf{K} &= \mathbf{x}\mathbf{W}_K + \mu^{(l-1)}\mathbf{W}_{\mu K} \label{eq:key}\\
-\mathbf{Q} &= \mathbf{x}\mathbf{W}_Q + \mu^{(l-1)}\mathbf{W}_{\mu Q} \label{eq:query}\\
-\mathbf{V} &= \mathbf{x}\mathbf{W}_V + \mu^{(l-1)}\mathbf{W}_{\mu V} \label{eq:value}
-\end{align}
-where $\mathbf{W}_{\mu K}, \mathbf{W}_{\mu Q}, \mathbf{W}_{\mu V}$ are learned linear projections.
-
-\paragraph{Learnable $\mu_{\text{init}}$ for layer 0.} In a standard Transformer, layer 0 receives no inter-layer context. We introduce a learnable parameter $\mu_{\text{init}} \in \mathbb{R}^{d}$ (initialized to zero) that serves as $\mu^{(-1)}$ for the first layer:
-\begin{equation}
-\mu^{(-1)} = \mu_{\text{init}} \quad \text{(learnable, shared across all positions)}
-\end{equation}
-This allows layer 0 to also benefit from Mu-Guidance, with the gradient adjusting $\mu_{\text{init}}$ to capture an optimal attention prior.
-
-\paragraph{$\mu$ production after MLP.} Each layer $l$ produces its own $\mu^{(l)}_{\text{contextual}}$ \textit{after} expert dispatch, capturing expert-specific information for each token:
-\begin{equation}
-\mu^{(l)}_{\text{contextual}} = \text{clamp}(\boldsymbol{\mu}^{(l)}_{\text{param}}, \mu_{\min}, \mu_{\max}) + \mathbf{W}_{\mu}^{(l)} \mathbf{h}^{(l)}_{\text{post-MLP}}
-\label{eq:mu_update}
-\end{equation}
-where $\boldsymbol{\mu}^{(l)}_{\text{param}} \in \mathbb{R}^{d}$ is a learnable parameter \textit{specific to layer $l$} (initialized to $(\mu_{\min}+\mu_{\max})/2$) and $\mathbf{W}_{\mu}^{(l)}$ is a contextual linear projection (initialized to zero). This $\mu^{(l)}_{\text{contextual}}$ becomes the $\mu^{(l-1)}$ used by layer $l+1$ in Equations~\ref{eq:key}--\ref{eq:value}.
-
-\paragraph{Full per-layer flow.} Each layer $l$ processes in order:
-\begin{enumerate}
-    \item \textbf{Attention} with $\mu^{(l-1)}_{\text{contextual}}$ (received from previous layer) via Equations~\ref{eq:key}--\ref{eq:value}
-    \item \textbf{MLP} with expert dispatch (sparse, one expert per token) + Shared Lexical Expert
-    \item \textbf{Produce $\mu^{(l)}_{\text{contextual}}$} via Equation~\ref{eq:mu_update}, passed to layer $l+1$
-\end{enumerate}
-
 \subsection{Final Architecture}
 \label{sec:architecture_v2}
 
-The final architecture integrates four improvements over the initial Token-Routed MLP:
+The final architecture integrates three improvements over the initial Token-Routed MLP:
 
 \subsubsection{Sparse Dispatch (Zero Waste)}
 \label{sec:sparse_dispatch}
@@ -240,31 +208,12 @@ Described in Section~\ref{sec:zipf_routing}. Replaces round-robin with a greedy 
 \end{figure}
 \FloatBarrier
 
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{component_activity.png}
-\caption{Mu-Guidance activity per layer. \textit{Left}: norms of $\mu_{\text{param}}$ and $\mu_{\text{proj}}$. \textit{Right}: norms of the $\mu \to K$ and $\mu \to Q$ projections in attention.}
-\label{fig:component_activity}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{mu_contribution.png}
-\caption{Mu contribution ratio to K, Q, V projections per layer. Mu-Guidance contributes $\sim$50\% of projection magnitude.}
-\label{fig:mu_contribution}
-\end{figure}
-\FloatBarrier
-
-\subsubsection{Mu-Guidance After MLP}
-
-The computation of $\mu$ is moved \textit{after} expert dispatch (instead of before), allowing $\mu$ to capture expert-specific information. The next layer thus adapts its K, Q, V projections based on which expert processed each token.
-
 \subsection{Adaptive Residual Scaler (Removed)}
 \label{sec:adaptive_scaler}
 
 An earlier version of the architecture included an adaptive residual scaler that modulated residual contributions via a learned controller. Empirical results at both 100M and 171M proxy scales showed inconsistent benefits: at 100M, removing the scaler \textit{improved} loss by $-0.005$, while at 171M it contributed only $+0.010$. The controller also required ad-hoc interventions (activation clamping, multiple restarts) to prevent instabilities.
 
-Based on this evidence, the adaptive scaler was removed from the architecture. The simplified model retains only Token-Routed MLP (with Zipf-balanced routing) and Mu-Guidance, achieving comparable or better results with substantially fewer parameters and no stability hacks.
+Based on this evidence, the adaptive scaler was removed from the architecture. The simplified model retains Token-Routed MLP with Zipf-balanced routing and the Shared Lexical Expert, achieving comparable or better results with substantially fewer parameters and no stability hacks.
 
 %=============================================================================
 \section{Theoretical Analysis}
@@ -346,68 +295,6 @@ Since $T_i \cap T_j = \emptyset$ by construction, the gradients $\nabla_{\mathbf
 Starting from random initialization with $\mathbb{E}[\cos(\mathbf{W}^{(i)}_0, \mathbf{W}^{(j)}_0)] \approx 0$ (for high-dimensional weights), the orthogonality is preserved throughout training. Our empirical measurements confirm $\cos(\mathbf{W}^{(i)}, \mathbf{W}^{(j)}) \approx 0$ across all expert pairs and layers (Section~\ref{sec:token_routing_analysis}).
 \end{proof}
 
-\subsection{Mu-Guidance as Forward Context Modulation}
-
-The Mu-Guided Attention mechanism can be interpreted through the lens of predictive coding \citep{rao1999predictive}, a theory of cortical computation.
-
-\begin{proposition}[Forward Context Modulation]
-The $\mu$-guidance mechanism implements a form of predictive modulation where the previous layer's post-MLP context influences the next layer's attention projections:
-\begin{equation}
-\mathbf{Q}^{(l)} = \mathbf{x}^{(l)}\mathbf{W}_Q + \underbrace{\mu^{(l-1)}\mathbf{W}_{\mu Q}}_{\text{forward context}}
-\end{equation}
-
-This is related in spirit to predictive-coding updates, although the information flow in our architecture is feed-forward across adjacent layers rather than feedback from higher layers to lower layers:
-\begin{equation}
-r^{(l)} = f(U^{(l)}r^{(l-1)} + W^{(l)}\epsilon^{(l+1)})
-\end{equation}
-where $r^{(l)}$ is the representation at layer $l$, $U^{(l)}$ is a feedforward weight, and $W^{(l)}\epsilon^{(l+1)}$ is the top-down prediction error from layer $l + 1$.
-\end{proposition}
-
-The $\mu$ state in COMPLEXITY-DEEP serves as a compressed summary of the previous layer's processing (including which expert processed each token) that modulates the next layer's attention computation. The information flows forward through the network: layer $l$ computes $\mu^{(l)}$ after its MLP, which then influences layer $l+1$'s attention. This is \emph{not} top-down feedback from higher to lower layers; rather, it is an enriched forward communication channel that carries expert-aware context alongside the standard residual stream.
-
-\begin{remark}[Biological Plausibility]
-The $\mu$-guidance mechanism shares structural similarities with lateral modulation in neural circuits, where contextual signals from one processing stage influence the next stage's computation \citep{gilbert2013top}.
-\end{remark}
-
-\subsection{Mu-Guidance Convergence}
-
-We now establish convergence guarantees for the $\mu$-guidance mechanism under gradient descent.
-
-\begin{theorem}[Mu-Guidance Convergence]
-\label{thm:mu_convergence}
-Let $\mu^{(l)}$ be the guidance state at layer $l$, updated via:
-\begin{equation}
-\mu^{(l)} = \alpha \cdot \mu^{(l-1)} + (1 - \alpha) \cdot \text{Pool}(\mathbf{h}^{(l)})
-\end{equation}
-where $\alpha \in (0, 1)$ is the interpolation coefficient and $\text{Pool}(\cdot)$ is a bounded pooling operation with $\|\text{Pool}(\mathbf{h})\|_2 \leq B$ for some constant $B > 0$.
-
-Then for any input sequence, the $\mu$ state converges exponentially:
-\begin{equation}
-\|\mu^{(L)} - \mu^*\|_2 \leq \alpha^L \|\mu^{(0)} - \mu^*\|_2
-\end{equation}
-where $\mu^*$ is the fixed point of the update rule and $L$ is the number of layers.
-\end{theorem}
-
-\begin{proof}
-The update rule defines a contraction mapping. For any two initial states $\mu^{(0)}_1, \mu^{(0)}_2$:
-\begin{equation}
-\|\mu^{(l)}_1 - \mu^{(l)}_2\|_2 = \|\alpha(\mu^{(l-1)}_1 - \mu^{(l-1)}_2) + (1-\alpha)(\text{Pool}(\mathbf{h}^{(l)}_1) - \text{Pool}(\mathbf{h}^{(l)}_2))\|_2
-\end{equation}
-
-Under the assumption that the pooled representations converge (i.e., the network processes the same input), the difference term vanishes, yielding:
-\begin{equation}
-\|\mu^{(l)}_1 - \mu^{(l)}_2\|_2 \leq \alpha \|\mu^{(l-1)}_1 - \mu^{(l-1)}_2\|_2
-\end{equation}
-
-By induction over $L$ layers: $\|\mu^{(L)}_1 - \mu^{(L)}_2\|_2 \leq \alpha^L \|\mu^{(0)}_1 - \mu^{(0)}_2\|_2$.
-
-Since $\alpha < 1$, this establishes exponential convergence with rate $\alpha$. In our implementation, $\alpha = 0.9$, giving a contraction factor of $0.9^{24} \approx 0.08$ over 24 layers.
-\end{proof}
-
-\begin{corollary}[Stability of Mu-Guidance]
-The $\mu$-guidance mechanism is Lipschitz continuous with constant $L_\mu = \frac{1-\alpha^L}{1-\alpha}(1 - \alpha)L_{pool} = (1 - \alpha^L)L_{pool}$, where $L_{pool}$ is the Lipschitz constant of the pooling operation. This ensures stable gradient flow during backpropagation.
-\end{corollary}
-
 \subsection{Computational Complexity Analysis}
 
 We provide a formal complexity analysis comparing COMPLEXITY-DEEP to standard Transformer and Mixture-of-Experts architectures.
@@ -420,9 +307,9 @@ For a sequence of length $S$, model dimension $d$, intermediate dimension $d_{ff
 \mathcal{O}_{dense} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot d_{ff}}_{MLP}\right)
 \end{equation}
 
-\textbf{COMPLEXITY-DEEP (top-1 Token-Routed MLP + Mu-Guidance):}
+\textbf{COMPLEXITY-DEEP (top-1 Token-Routed MLP branch):}
 \begin{equation}
-\mathcal{O}_{ours} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot \frac{d_{ff}}{n}}_{Token\text{-}Routed\ MLP} + \underbrace{S \cdot d}_{\mu\text{-}update}\right)
+\mathcal{O}_{ours} = L \cdot \left(\underbrace{S^2 \cdot d}_{attention} + \underbrace{S \cdot d \cdot \frac{d_{ff}}{n}}_{Token\text{-}Routed\ MLP}\right)
 \end{equation}
 
 The idealized top-1 routed branch reduces routed-MLP compute by a factor of $n$. Architectures with a shared expert or top-$k>1$ routing, including our 300M scaling model, have a different active-compute profile; their realised throughput is measured empirically in Section~\ref{sec:scaling_300m}.
@@ -467,14 +354,13 @@ The approximation error for token $t \in T_i$ is bounded by the approximation ca
 \begin{proposition}[Error Decomposition]
 The total approximation error of COMPLEXITY-DEEP decomposes as:
 \begin{equation}
-\mathcal{E}_{total} \leq \underbrace{\mathcal{E}_{attn}}_{attention} + \underbrace{\mathcal{E}_{routing}}_{expert\ mismatch} + \underbrace{\mathcal{E}_{expert}}_{within\text{-}expert} + \underbrace{\mathcal{E}_{\mu}}_{\mu\text{-}guidance}
+\mathcal{E}_{total} \leq \underbrace{\mathcal{E}_{attn}}_{attention} + \underbrace{\mathcal{E}_{routing}}_{expert\ mismatch} + \underbrace{\mathcal{E}_{expert}}_{within\text{-}expert}
 \end{equation}
 where:
 \begin{itemize}
     \item $\mathcal{E}_{attn}$: error from finite attention context
     \item $\mathcal{E}_{routing}$: error induced by committing each token to a fixed lexical partition rather than choosing experts from the current hidden state
     \item $\mathcal{E}_{expert}$: approximation error within each expert, bounded by expert capacity
-    \item $\mathcal{E}_{\mu} \leq \alpha^L \|\mu^{(0)}\|_2$: error from $\mu$-state initialization (vanishes exponentially)
 \end{itemize}
 \end{proposition}
 
@@ -549,7 +435,6 @@ Expert intermediate & 64 & --- \\
 Shared expert intermediate & 3840 & --- \\
 Experts ($n_{experts}$) & 4, top-$k=2$ & 1 (dense) \\
 Shared/routed gates & 1.0 / 0.1 & --- \\
-Mu-Guidance & No (300M scaling run) & No \\
 Vocabulary & 32000 & 32000 \\
 Max context & 2048 & 2048 \\
 \midrule
@@ -572,7 +457,7 @@ For the corrected iso-parameter scaling comparison (Section~\ref{sec:scaling_300
 \subsection{Pilot Study}
 \label{sec:pilot_study}
 
-An exploratory 1.5B-parameter model trained on 7B tokens motivated the architectural simplification: the adaptive residual scaler was removed (redundant with Adam), Zipf-balanced routing was added, and the Shared Lexical Expert was introduced. The definitive evaluation is presented at the 187M scale (Run 2) and the corrected 300M iso-parameter comparison (Table~\ref{tab:config_300m}).
+An exploratory 1.5B-parameter model trained on 7B tokens motivated the architectural simplification: the adaptive residual scaler was removed (redundant with Adam), Zipf-balanced routing was added, and the Shared Lexical Expert was introduced. The evidence in this paper is therefore centered on the corrected 300M iso-parameter comparison (Table~\ref{tab:config_300m}).
 
 \subsection{Training Recipe}
 \label{sec:training_recipe}
@@ -611,14 +496,14 @@ where $T_e$ is the set of tokens already assigned to expert $e$. Unlike round-ro
 \centering
 \caption{Architectural comparison}
 \label{tab:arch_comparison}
-\begin{tabular}{lccc}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Architecture} & \textbf{Inter-layer signal} & \textbf{Routing} & \textbf{Load balancing loss} \\
+\textbf{Architecture} & \textbf{Routing} & \textbf{Load balancing loss} \\
 \midrule
-Transformer & No & No & N/A \\
-Switch Transformer & No & Soft & Required \\
-Mixtral & No & Top-2 & Required \\
-\textbf{COMPLEXITY-DEEP} & \textbf{Forward $\mu$} & \textbf{Hard lexical} & \textbf{Not used} \\
+Transformer & No & N/A \\
+Switch Transformer & Soft & Required \\
+Mixtral & Top-2 & Required \\
+\textbf{COMPLEXITY-DEEP} & \textbf{Hard lexical} & \textbf{Not used} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -661,67 +546,6 @@ Specialization type & Lexical & Semantic & Standard MoE \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{Component Ablation (187M, 500M tokens)}
-\label{sec:training_ablation}
-
-To isolate each component's contribution, we train models \textbf{from scratch} on FineWeb-Edu with identical hyperparameters (AdamW $\beta=(0.9, 0.95)$, weight decay $= 0.1$, cosine scheduler, 5\% dynamic warmup, gradient clipping $= 1.0$, BF16, batch=128). Four configurations ($\sim$171--187M) are compared over 954 steps:
-
-\begin{table}[h]
-\centering
-\caption{Iso-parameter ablation configurations ($\sim$166--187M, 8B tokens FineWeb-Edu).}
-\label{tab:ablation_configs}
-\begin{tabular}{llccccc}
-\toprule
-\textbf{Run} & \textbf{Configuration} & \textbf{Params} & \textbf{MLP} & \textbf{Mu} & \textbf{Shared} & \textbf{Experts} \\
-\midrule
-run1 & Dense SwiGLU baseline        & 171M & Dense (2416)              & --- & --- & 1 \\
-run2 & Full Complexity              & 187M & Token-Routed (512/e)      & \checkmark & \checkmark & 4 \\
-run3 & TR + Shared + Zipf (no Mu)   & 187M & Token-Routed (512/e)      & --- & \checkmark & 4 \\
-run4 & Mixtral (learned router)     & 187M & Mixtral-style (512/e)     & --- & --- & 4 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[h]
-\centering
-\caption{Full ablation (500M tokens, 954 steps). Average loss measures overall convergence speed.}
-\label{tab:ablation_results}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Configuration} & \textbf{Params} & \textbf{Avg Loss} & \textbf{$\Delta$ vs Dense} \\
-\midrule
-Run 1: Dense (SwiGLU)                    & 171M & 4.905 & --- \\
-Run 2: TR + Shared + Mu + Zipf           & 187M & \textbf{4.793} & $-0.112$ \\
-Run 3: TR + Shared + Zipf (no Mu)        & 187M & 4.916 & $+0.011$ \\
-Run 4: Mixtral (learned router, top-1)   & 187M & 4.843 & $-0.062$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-At this proxy scale, the full model (Run 2) converges faster than both the dense baseline ($-0.112$) and the Mixtral-style MoE ($-0.050$). The no-Mu ablation (Run 3) is slightly slower than dense at 187M ($+0.011$ average loss), suggesting that Mu-Guidance helps this particular small-scale configuration. This conclusion does not automatically transfer to the 300M scaling run, where the strongest matched-budget result is obtained by a residual Token-Routed variant without Mu-Guidance.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_loss_curves.png}
-\caption{Ablation loss curves (187M, 500M tokens): Dense vs full Token-Routed (Shared+Mu+Zipf) vs Token-Routed without Mu-Guidance. The full model (blue) converges faster throughout.}
-\label{fig:loss_curves}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_loss_gap.png}
-\caption{Ablation loss gap TR $-$ Dense (187M, 500M tokens). Negative (green) = TR wins. The TR leads for 95\% of training.}
-\label{fig:loss_gap}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_expert_loss.png}
-\caption{Per-expert loss during ablation training (187M). All 4 experts converge in parallel (max gap 0.23).}
-\label{fig:expert_loss}
-\end{figure}
-\FloatBarrier
 
 \subsection{Scaling Comparison (300M, 8B tokens)}
 \label{sec:scaling_300m}
@@ -786,18 +610,19 @@ last 50 (smoothed) & --- & 2.9446 & \textbf{2.9283} & $\mathbf{-0.016}$ \\
 
 \paragraph{Training throughput.} The 300M Token-Routed model uses a large shared branch plus a small top-$k=2$ routed branch, so it is not intended as a pure top-1 speed benchmark. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen. The routing table lookup itself is $O(1)$ and does not require learned-router synchronization.
 
-\subsection{Inference Performance}
+\subsection{Inference Sanity Check}
 \label{sec:inference_perf}
 
-The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs achieves a sustained throughput of \textbf{8,078 tokens/s} (peak 10,179 tokens/s) serving 100 concurrent requests on a single NVIDIA RTX PRO 6000 GPU (96 GB), with a median time-to-first-token (TTFT) of 29.3\,ms and a median inter-token latency (ITL) of 7.9\,ms (Figure~\ref{fig:inference_bench}). The deterministic per-token routing (no learned router) is natively compatible with CUDA graph capture, eliminating the CPU--GPU synchronizations required by classical MoE architectures. This property is independent of model size: unlike learned-router MoE which requires all-to-all inter-GPU communication, deterministic routing requires no inter-GPU coordination, suggesting favorable throughput scaling with both GPU count and model size.
+To check that deterministic lexical routing is compatible with standard serving stacks, we also benchmarked an earlier small Token-Routed checkpoint on vLLM 0.18 with PagedAttention and CUDA graphs. This serving result is not used as evidence for the corrected 300M scaling comparison above, and it should not be interpreted as a compute-efficiency claim for the 300M checkpoint. It only verifies that deterministic per-token routing can be deployed without a learned router or all-to-all dispatch.
+
+On a single NVIDIA RTX PRO 6000 GPU (96 GB), serving 100 concurrent requests at 10 RPS with 128 input tokens and 1,900 output tokens, the checkpoint reaches a sustained throughput of \textbf{8,078 tokens/s} (peak 10,179 tokens/s), with median time-to-first-token (TTFT) of 29.3\,ms and median inter-token latency (ITL) of 7.9\,ms (Figure~\ref{fig:inference_bench}). Updated inference measurements for the corrected 300M checkpoint remain future work.
 
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=0.9\textwidth]{fig_inference_bench.png}
-\caption{Inference benchmark on a single NVIDIA RTX PRO 6000 (96\,GB). 100 requests at 10 RPS, 128 input tokens, 1,900 output tokens. Sustained throughput: 8,078 tok/s; peak: 10,179 tok/s; median TTFT: 29.3\,ms; median ITL: 7.9\,ms.}
+\caption{Inference sanity check on a single NVIDIA RTX PRO 6000 (96\,GB). 100 requests at 10 RPS, 128 input tokens, 1,900 output tokens. Sustained throughput: 8,078 tok/s; peak: 10,179 tok/s; median TTFT: 29.3\,ms; median ITL: 7.9\,ms. This benchmark uses an earlier small checkpoint and is reported only as a deployment compatibility check.}
 \label{fig:inference_bench}
 \end{figure}
-
 \FloatBarrier
 
 \subsection{Limitations and Future Work}
@@ -805,7 +630,6 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 
 \begin{itemize}
     \item \textbf{Single-seed scaling result}: The corrected 300M run is a full 8B-token matched-budget comparison, but it is still a single seed per architecture. Additional seeds would quantify whether the final $-0.0163$ smoothed gap is robust to initialization variance.
-    \item \textbf{Mu-Guidance at scale}: The 187M ablation supports Mu-Guidance, but the corrected 300M scaling win uses a residual Token-Routed model without Mu-Guidance. A full 300M Mu-guided run remains future work.
     \item \textbf{Distribution-specific routing table}: Zipf bin-packing uses an empirical frequency estimate from the training distribution. Domain shifts can change realised expert utilization and should be measured when transferring the routing table.
     \item \textbf{Standardized benchmarks}: Zero-shot evaluation on ARC-Easy, HellaSwag, and MMLU via \texttt{lm-evaluation-harness} should be rerun on the corrected 300M checkpoints.
 \end{itemize}
@@ -815,9 +639,9 @@ The Run 2 model (187M) deployed on vLLM 0.18 with PagedAttention and CUDA graphs
 \label{sec:conclusion}
 %=============================================================================
 
-We presented COMPLEXITY-DEEP, a language model architecture with three main contributions: (1) Token-Routed MLP with Zipf-balanced greedy bin-packing and Shared Lexical Expert for deterministic assignment without auxiliary losses, (2) Mu-Guided Attention with learnable $\mu_{\text{init}}$ and $\mu$ production after the MLP for expert-aware inter-layer communication, and (3) a training recipe with dynamic warmup (5\%) and GPT-style initialization ($1/\sqrt{2L}$).
+We presented COMPLEXITY-DEEP, a language model architecture centered on Token-Routed MLPs with Zipf-balanced greedy bin-packing and a Shared Lexical Expert for deterministic assignment without auxiliary load-balancing losses.
 
-Component ablation at 187M (500M tokens) shows the full Token-Routed+Shared+Mu configuration outperforming the dense baseline in average loss (4.793 vs 4.905, $\Delta = -0.112$). In the corrected iso-parameter 300M scaling run at iso-batch (1,048,576 tokens/step, full 8B-token budget), the residual Token-Routed no-Mu variant pays a transient specialization cost during the first $\approx$700 steps (peak gap $+0.31$ near step 40), first wins on logged train loss at step 740 and on validation loss at step 750, then stays ahead until the end: the smoothed final train-loss gap over the last 50 logged steps is $-0.0163$ in favor of Token-Routed (2.9283 vs 2.9446). These results support deterministic lexical routing as a viable alternative to learned MoE routing at matched parameter count, while leaving multi-seed scaling and full Mu-guided scaling as important next steps. Inference on vLLM 0.18 reaches 8,078 tok/s for the 187M model, confirming the deployability benefit of deterministic routing; updated 300M inference numbers will be reported from the corrected checkpoint.
+In the corrected iso-parameter 300M scaling run at iso-batch (1,048,576 tokens/step, full 8B-token budget), the residual Token-Routed variant pays a transient specialization cost during the first $\approx$700 steps (peak gap $+0.31$ near step 40), first wins on logged train loss at step 740 and on validation loss at step 750, then stays ahead until the end: the smoothed final train-loss gap over the last 50 logged steps is $-0.0163$ in favor of Token-Routed (2.9283 vs 2.9446). These results support deterministic lexical routing as a promising matched-token quality signal at matched parameter count, while leaving multi-seed scaling, compute-normalized comparisons, and updated inference measurements for the corrected 300M checkpoint as important next steps.
 
 \subsubsection*{Broader Impact Statement}
 This work introduces architectural innovations for language models. While these models have broad applications, they also carry risks of misuse. We release the model weights to enable research while encouraging responsible use.

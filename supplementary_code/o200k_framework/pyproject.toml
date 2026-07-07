@@ -1,0 +1,124 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "complexity-framework"
+version = "0.3.0"
+description = "Modular Python framework for Transformer and Token-Routed language-model research"
+readme = "README_PYPI.md"
+license = {text = "CC-BY-NC-4.0"}
+authors = [
+    {name = "Anonymous Authors", email = "anonymous@example.org"}
+]
+keywords = [
+    "llm",
+    "transformer",
+    "deep-learning",
+    "pytorch",
+    "attention",
+    "moe",
+    "mixture-of-experts",
+    "flash-attention",
+    "mamba",
+    "rwkv",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.8"
+dependencies = [
+    # NOTE: torch is intentionally NOT in required deps. PyPI's default `torch`
+    # wheel is the NVIDIA CUDA build — installing it via `pip install -e .` on a
+    # ROCm host silently replaces the AMD-built torch and yanks in 1.5 GB of
+    # nvidia-* packages. Pick a backend extra ([cuda] / [rocm] / [cpu]) so
+    # torch resolves against the right wheel index.
+    "numpy>=1.21.0",
+    "einops>=0.6.0",
+    "transformers>=4.30.0",
+    "tokenizers>=0.13.0",
+    "tiktoken>=0.7.0",
+    "datasets>=2.0.0",
+    "tqdm>=4.0.0",
+    "wandb>=0.15.0",
+    "safetensors>=0.4.0",   # save_pretrained + checkpointing
+    "pyyaml>=6.0",          # imported at module load in config/model_config.py
+    "typer>=0.9.0",         # CLI (complexity.cli)
+]
+
+[project.optional-dependencies]
+# IMPORTANT: torch is intentionally NOT listed in any backend extra.
+#
+# Reason: pip cannot attach a `--index-url` to an extra. If we list torch here
+# pip will resolve it against whatever indexes are in scope at install time,
+# which on a stock setup means PyPI's CUDA wheel — even when the user wanted
+# ROCm. Pinning local-version tags (e.g. `torch>=2.9+rocm6.4`) is fragile
+# because tags change per ROCm release.
+#
+# Instead, install torch in a SEPARATE step before the framework, against the
+# backend-appropriate index. The `scripts/install_backend.sh` helper or the
+# Makefile targets (`make install-rocm` / `install-cuda` / `install-cpu`) do
+# this in one go. The extras below only carry backend-specific kernel libs
+# that DO live on PyPI.
+cuda = [
+    "triton>=2.0.0",
+    "liger-kernel>=0.5.0",  # fused linear+CE, RMSNorm, RoPE (Triton)
+    # flash-attn removed: builds from source (~30min), SDPA covers the same path
+]
+rocm = [
+    "pytorch-triton-rocm; platform_system == 'Linux'",
+    "liger-kernel>=0.5.0",  # exact fused linear+CE and Triton kernels; supports ROCm through Triton
+]
+cpu = []
+fp8 = [
+    "torchao>=0.7.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+complexity = "complexity.cli.app:main"
+cf-o200k-pretrain = "complexity.training.o200k_pretrain:main"
+cf-plan-run = "complexity.training.plan_run:main"
+cf-plan-cluster = "complexity.training.cluster_plan:main"
+cf-check-pipeline = "complexity.training.pipeline_check:main"
+
+[project.urls]
+Homepage = "https://github.com/Anonymous Authors/complexity-framework"
+Documentation = "https://github.com/Anonymous Authors/complexity-framework/tree/main/docs"
+Repository = "https://github.com/Anonymous Authors/complexity-framework"
+Issues = "https://github.com/Anonymous Authors/complexity-framework/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["complexity*"]
+exclude = ["docs*", "tests*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.md"]
+
+[tool.black]
+line-length = 100
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

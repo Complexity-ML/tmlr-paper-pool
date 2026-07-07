@@ -13,7 +13,7 @@ Performance:
 - Batched bmm: 3.3x speedup
 - CGGR Triton: 5-6x speedup
 
-Author: Boris Peyriguere
+Author: Anonymous Authors
 """
 
 import torch

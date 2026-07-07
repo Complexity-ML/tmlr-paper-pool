@@ -1,142 +1,103 @@
-# COMPLEXITY-DEEP: Supplementary Code
+# COMPLEXITY-DEEP supplementary code
 
-This repository contains the corrected source code for the COMPLEXITY-DEEP
-architecture described in the paper. The supplementary code now reflects the
-residual Token-Routed implementation used in the 300M scaling run, where the
-Token-Routed model starts behind dense, crosses over after early specialization,
-and finishes ahead at matched tokens seen.
+This archive contains two code paths:
 
-## Structure
+1. `o200k_framework/` — the code path used for the current reported o200k Token-Routed runs and ablations.
+2. The legacy files directly under `supplementary_code/` (`core/`, `models/`, `training/`, etc.) — a compact 32k-tokenizer reference implementation kept for architecture readability/backward compatibility.
 
-```
-.
-├── core/                     # Core model components
-│   ├── attention.py          # Mu-Guided Attention implementation
-│   ├── mlp.py                # SwiGLU MLP components
-│   ├── layer.py              # Decoder layer with all components
-│   ├── token_routed_mlp.py   # Token-Routed MLP (deterministic routing)
-│   ├── normalization.py      # RMSNorm implementation
-│   ├── rotary.py             # Rotary Position Embeddings (RoPE)
-│   └── safety.py             # Safety clamping mechanisms
-├── models/
-│   ├── config.py             # Model configuration
-│   ├── modeling.py           # Full model implementation
-│   └── utils.py              # Utility functions
-├── cuda/                     # CUDA/Triton optimizations
-│   ├── triton_token_routed.py  # Triton-accelerated Token-Routed MLP
-│   ├── triton_mu_qkv.py        # Triton Mu-guided attention
-│   ├── fused_attention.py      # Fused attention kernels
-│   ├── fused_mlp.py            # Fused MLP kernels
-│   └── persistent_cggr.py      # Persistent CGGR optimization
-├── training/
-│   ├── train_complexity.py   # Training script
-│   └── online_self_rl.py     # Importable inference-time self-RL module
-├── evaluation/
-│   └── run_benchmarks.py     # Benchmark evaluation script
-└── configs/
-    └── model_config.json     # Model configuration
+For reproducing the reported o200k experiments, use `o200k_framework/`.
+
+## Reported-run code path
+
+```text
+supplementary_code/o200k_framework/
 ```
 
-## Key Components
+This is a source snapshot of `complexity-framework` commit:
 
-### Token-Routed MLP
-Deterministic routing via `expert_idx = token_id % num_experts`. No load balancing loss required.
-
-### Mu-Guided Attention
-Latent state μ from previous layer guides K, Q, V projections, creating bidirectional information flow.
-
-### Corrected Scaling Presets
-The code includes iso-parameter 300M presets:
-- `300m_dense`: 306.5M dense SwiGLU baseline.
-- `300m_tr`: 306.5M residual Token-Routed with a 3840-wide shared expert,
-  4 small routed experts, top-k=2, shared/routed gate init 1.0/0.1, and
-  Mu-Guidance disabled for the matched scaling run.
-
-The old dynamic-controller path is not part of the corrected architecture.
-
-## Requirements
-
-- Python 3.10+
-- PyTorch 2.0+
-- transformers
-- datasets
-- tqdm
-- triton (optional, for CUDA optimizations)
-
-## Usage
-
-### Training
-```bash
-python training/train_complexity.py --size 150m --dataset your_dataset
+```text
+anonymous-snapshot
+feat: add H200 1B ablation launcher
 ```
 
-### Inference-time full-model self-RL
-The framework includes an importable online module for serving-time
-self-reinforcement.  It is meant to be called by an inference server when the
-model hesitates, has high entropy / low confidence, or receives corrective user
-feedback.
+It includes:
 
-```python
-from supplementary_code.training.online_self_rl import (
-    OnlineSelfRLEngine,
-    OnlineSelfRLConfig,
-)
+- `complexity/` model and training package.
+- `scripts/train_100m_o200k_tr_local.py`.
+- `scripts/ablations_100m/` local/H200 ablation launchers.
+- `configs/run_configs/ablations_100m/` seven 100M ablation configs.
+- `configs/run_configs/300m_o200k_tr_rocm_scale.yaml`.
+- `tests/test_100m_ablation_configs.py`.
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-7)
-engine = OnlineSelfRLEngine(
-    model=model,
-    tokenizer=tokenizer,
-    optimizer=optimizer,
-    config=OnlineSelfRLConfig(entropy_trigger=5.0, confidence_trigger=0.20),
-)
+The included Token-Routed implementation contains the top-k auxiliary routing fix used by the reported ablations: random/modulo/round-robin controls do not receive Zipf-balanced auxiliary routes.
 
-response, stats, episode = engine.infer_and_maybe_update(
-    "Explain why this code is failing.",
-    user_feedback="wrong",   # optional; also triggers on uncertainty
-)
-```
-
-The online engine updates the full model on the current inference episode when
-the model is uncertain or receives corrective feedback.
-
-Corrected 300M scaling commands used for the paper comparison from the
-`complexity-framework` training repo are mirrored in
-`training/reproduce_300m_scaling.sh`:
+## Quick install for o200k framework snapshot
 
 ```bash
-# Dense baseline: 8 GPUs, 1,048,576 tokens/step
-torchrun --nproc_per_node=8 scripts/train_300m_dense_local.py \
-  --dataset fineweb --tokenizer ./tokenizer --steps 7629 \
-  --batch-size 64 --seq-len 2048 --bf16 --grad-ckpt \
-  --eval-steps 250 --eval-batches 32 --log-steps 20 \
-  --save-steps 500 --save-dir checkpoints/8b-300m-dense \
-  --save-total-limit 3 --run-name 8b-300m-dense
-
-# Token-Routed: 8 GPUs, 1,048,576 tokens/step (iso-batch with dense)
-torchrun --nproc_per_node=8 scripts/train_300m_tr_local.py \
-  --dataset fineweb --tokenizer ./tokenizer --steps 7629 \
-  --batch-size 64 --seq-len 2048 --bf16 --grad-ckpt \
-  --eval-steps 250 --eval-batches 32 --log-steps 20 \
-  --intermediate-size 256 --shared-intermediate-size 3840 \
-  --top-k 2 --top-k-primary-weight 0.5 \
-  --shared-gate-init 1.0 --routed-gate-init 0.1 \
-  --save-steps 500 --save-dir checkpoints/8b-300m-tr \
-  --save-total-limit 3 --run-name 8b-300m-tr
+cd supplementary_code/o200k_framework
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch
+python -m pip install -e '.[cuda,dev]'
 ```
 
-Both runs use the same global batch (1,048,576 tokens/step) so matched raw
-step number equals matched tokens seen. The Token-Routed model trails the dense
-baseline during the early specialization phase (peak gap +0.31 around step 40)
-and first crosses over at logged train step 740 and validation step 750. At
-step 1000 (≈1.05B tokens), Token-Routed train loss is 3.5324 versus 3.5500 for
-dense (gap −0.018 in favor of Token-Routed).
-Expert utilization remains balanced throughout (≈0.248/0.264/0.248/0.240, zero
-dead experts).
+For CPU-only inspection, install a CPU PyTorch wheel instead of the CUDA wheel.
 
-### Evaluation
+## Verify routing-control behavior
+
 ```bash
-python evaluation/run_benchmarks.py --checkpoint path/to/checkpoint.pt --max-samples 500
+cd supplementary_code/o200k_framework
+. .venv/bin/activate
+PYTHONPATH=. pytest tests/test_100m_ablation_configs.py -q
 ```
+
+Expected:
+
+```text
+5 passed
+```
+
+## 100M ablations
+
+The seven ablations are:
+
+```text
+100m_zipf_shared
+100m_zipf_no_shared
+100m_modulo_shared
+100m_random_shared
+100m_round_robin_shared
+100m_shared_only
+100m_dense_residual
+```
+
+On one H200, the provided launcher runs 1B tokens per ablation:
+
+```bash
+cd supplementary_code/o200k_framework
+. .venv/bin/activate
+PYTHON=python scripts/ablations_100m/run_h200_1b_all.sh
+```
+
+Budget per run:
+
+```text
+1908 steps × batch 256 × seq 2048 = 1.000341504B tokens
+```
+
+## Legacy 32k reference code
+
+The older compact implementation under `supplementary_code/core`, `supplementary_code/models`, and `supplementary_code/training` is not the source of the current o200k ablation results. It is retained as a smaller readable reference implementation.
+
+Important differences from the reported-run path:
+
+- 32k tokenizer instead of o200k.
+- No random/modulo/round-robin ablation harness.
+- Simpler top-k scheme.
+- Different model-size accounting because of vocabulary size.
+
+Do not use the legacy 32k path to reproduce the o200k ablation tables.
 
 ## License
 

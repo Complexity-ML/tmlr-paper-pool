@@ -13,7 +13,7 @@ This file is kept for:
 The concat approach achieves ~2x speedup using cuBLAS without custom kernels.
 Custom Triton kernels had too much launch overhead for these small ops.
 
-Author: Complexity-ML 2025
+Author: Anonymous Authors
 """
 
 import torch

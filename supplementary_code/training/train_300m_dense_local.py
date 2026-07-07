@@ -6,7 +6,7 @@ the dense counterpart to train_300m_tr_local.py.
 
 Examples:
     python3 scripts/train_300m_dense_local.py --steps 20 --dataset random
-    python3 scripts/train_300m_dense_local.py --dataset text --text-file data/sample.txt --tokenizer ./tokenizer --bf16
+    python3 scripts/train_300m_dense_local.py --dataset text --text-file data/sample.txt --bf16
 """
 
 from __future__ import annotations
@@ -44,6 +44,10 @@ logging.basicConfig(
 logger = logging.getLogger("train_300m_dense_local")
 for noisy_logger in ("httpx", "httpcore", "huggingface_hub", "datasets"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
+
+SUPPLEMENTARY_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TOKENIZER_PATH = SUPPLEMENTARY_ROOT / "tokenizer"
 
 
 def make_config() -> ComplexityConfig:
@@ -290,7 +294,7 @@ def main():
     parser = argparse.ArgumentParser(description="Local ~300M dense baseline")
     parser.add_argument("--dataset", choices=["random", "text", "fineweb"], default="random")
     parser.add_argument("--text-file", type=str, default=None)
-    parser.add_argument("--tokenizer", type=str, default="./tokenizer")
+    parser.add_argument("--tokenizer", type=str, default=str(DEFAULT_TOKENIZER_PATH))
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--seq-len", type=int, default=256)
