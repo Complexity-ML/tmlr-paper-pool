@@ -549,6 +549,45 @@ Specialization type & Lexical & Semantic & Standard MoE \\
 \end{tabular}
 \end{table}
 
+\subsection{Controlled 100M Ablation Preview (1B tokens)}
+\label{sec:ablation_100m_preview}
+
+We are also running a seven-way 100M ablation suite designed to isolate the contribution of the shared dense path and the lexical routed residual branch. The suite includes dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared, round-robin shared, and shared-only variants. The first two completed $2\times$B200 runs compare the matched dense residual baseline against the Zipf shared lexical-residual variant at the same token budget: $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ sequence length 2048 $=1.0003$B tokens. These results are an ablation-scale preview, not a replacement for the 300M scaling comparison below.
+
+The Zipf shared variant is already ahead of the dense baseline in both logged final training loss and validation loss: at the last logged training point (step 950, $0.996$B tokens), Zipf shared reaches 4.8205 versus 4.8244 for dense; at the best validation checkpoint (step 750, $0.786$B tokens), Zipf shared reaches 4.8887 versus 4.8958 for dense. This is consistent with the framing that the routed branch is useful as a residual lexical specialization path on top of a shared dense MLP backbone.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_100m_b200_train_curves.png}
+\caption{First completed 100M ablation curves on $2\times$B200, matched at 1.0003B tokens. The Zipf shared lexical-residual variant finishes slightly ahead of the matched dense residual baseline on training loss.}
+\label{fig:100m_b200_train_curves}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{fig_100m_b200_eval_curves.png}
+\caption{Validation checkpoints for the first two completed 100M ablation runs. Zipf shared reaches the lower validation loss at the best checkpoint observed so far (step 750).}
+\label{fig:100m_b200_eval_curves}
+\end{figure}
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{First two completed 100M ablation runs on $2\times$B200. Negative gap means Zipf shared is ahead of dense.}
+\label{tab:100m_b200_first_ablation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Dense residual} & \textbf{Zipf shared} & \textbf{Gap (Zipf $-$ Dense)} \\
+\midrule
+Train loss @ step 950 & 4.8244 & \textbf{4.8205} & \textbf{$-0.0039$} \\
+Best validation loss @ step 750 & 4.8958 & \textbf{4.8887} & \textbf{$-0.0070$} \\
+Throughput near end & \textbf{397k tok/s} & 321k tok/s & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
 \subsection{Scaling Comparison (300M, 8B tokens)}
 \label{sec:scaling_300m}
 

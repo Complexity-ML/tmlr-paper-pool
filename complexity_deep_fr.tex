@@ -549,7 +549,46 @@ Type sp\'{e}cialisation & Lexicale & S\'{e}mantique & MoE standard \\
 \end{tabular}
 \end{table}
 
-\subsection{Comparaison au scale (300M, 8B tokens)}
+\subsection{Aper\c{c}u d'ablation contr\^{o}l\'{e}e 100M (1B tokens)}
+\label{sec:ablation_100m_preview}
+
+Nous ex\'{e}cutons \'{e}galement une suite d'ablation 100M en sept variantes pour isoler la contribution du chemin dense partag\'{e} et de la branche lexicale rout\'{e}e r\'{e}siduelle. La suite inclut dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared, round-robin shared et shared-only. Les deux premiers runs termin\'{e}s sur $2\times$B200 comparent la baseline dense residual appari\'{e}e \`{a} la variante Zipf shared lexical-residual au m\^{e}me budget de tokens : $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ longueur 2048 $=1{,}0003$B tokens. Ces r\'{e}sultats sont un aper\c{c}u \`{a} l'\'{e}chelle d'ablation, pas un remplacement de la comparaison de scaling 300M ci-dessous.
+
+La variante Zipf shared est d\'{e}j\`{a} devant la baseline dense sur la perte train finale logg\'{e}e et sur la perte validation : au dernier point train logg\'{e} (step 950, $0{,}996$B tokens), Zipf shared atteint 4,8205 contre 4,8244 pour dense ; au meilleur checkpoint validation (step 750, $0{,}786$B tokens), Zipf shared atteint 4,8887 contre 4,8958 pour dense. Cela est coh\'{e}rent avec le framing selon lequel la branche rout\'{e}e est utile comme chemin de sp\'{e}cialisation lexicale r\'{e}siduel au-dessus d'un backbone MLP dense partag\'{e}.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_100m_b200_train_curves.png}
+\caption{Deux premi\`{e}res courbes d'ablation 100M termin\'{e}es sur $2\times$B200, appari\'{e}es \`{a} 1,0003B tokens. La variante Zipf shared lexical-residual termine l\'{e}g\`{e}rement devant la baseline dense residual en perte train.}
+\label{fig:100m_b200_train_curves}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.72\textwidth]{fig_100m_b200_eval_curves.png}
+\caption{Checkpoints de validation pour les deux premiers runs d'ablation 100M termin\'{e}s. Zipf shared obtient la plus basse perte validation au meilleur checkpoint observ\'{e} pour l'instant (step 750).}
+\label{fig:100m_b200_eval_curves}
+\end{figure}
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Deux premiers runs d'ablation 100M termin\'{e}s sur $2\times$B200. Un gap n\'{e}gatif signifie que Zipf shared est devant dense.}
+\label{tab:100m_b200_first_ablation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{M\'{e}trique} & \textbf{Dense residual} & \textbf{Zipf shared} & \textbf{Gap (Zipf $-$ Dense)} \\
+\midrule
+Train loss @ step 950 & 4,8244 & \textbf{4,8205} & \textbf{$-0,0039$} \\
+Meilleure validation @ step 750 & 4,8958 & \textbf{4,8887} & \textbf{$-0,0070$} \\
+Throughput pr\`{e}s de la fin & \textbf{397k tok/s} & 321k tok/s & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
+\subsection{Comparaison de scaling (300M, 8B tokens)}
 \label{sec:scaling_300m}
 
 Pour valider l'architecture corrig\'{e}e \`{a} plus grande \'{e}chelle, nous entra\^{i}nons des mod\`{e}les iso-param\`{e}tres (Table~\ref{tab:config_300m}) sur un budget FineWeb-Edu de 8B tokens. Les deux runs utilisent le m\^{e}me batch global de 1\,048\,576 tokens/step (8 GPUs $\times$ batch 64 $\times$ s\'{e}quence 2048) ; num\'{e}ro de step identique \'{e}quivaut donc \`{a} tokens vus identiques, sans interpolation n\'{e}cessaire.
