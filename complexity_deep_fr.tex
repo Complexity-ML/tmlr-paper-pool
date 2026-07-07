@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage construite autour d'un routage lexical d\'{e}terministe. L'article \'{e}tudie deux composants : (1) \textbf{Token-Routed MLP avec bin-packing glouton Zipf-balanced}, qui assigne les tokens aux experts \`{a} partir d'une table de fr\'{e}quences estim\'{e}e sur le corpus, sans routeur appris ni perte auxiliaire d'\'{e}quilibrage ; et (2) \textbf{Shared Lexical Expert}, un chemin MLP dense partag\'{e} par tous les tokens tandis que les experts rout\'{e}s se sp\'{e}cialisent sur des partitions lexicales. Nous analysons la capacit\'{e} conditionnelle et le compromis de calcul induits par les partitions lexicales d\'{e}terministes, en distinguant explicitement l'\'{e}quilibre de cardinalit\'{e} du vocabulaire et l'\'{e}quilibre de charge corpus sous des distributions Zipfiennes. Notre principal r\'{e}sultat de scaling est une comparaison iso-param\`{e}tres corrig\'{e}e \`{a} $\sim$300M param\`{e}tres sur 8B tokens FineWeb-Edu : une variante Token-Routed r\'{e}siduelle avec grande branche partag\'{e}e et petite branche rout\'{e}e Zipf paie un co\^{u}t de sp\'{e}cialisation initial, bat d'abord la baseline dense au step 740 sur la perte train logg\'{e}e et au step 750 sur la validation, et termine avec un avantage de perte train liss\'{e} de $-0,0163$.
+Nous pr\'{e}sentons COMPLEXITY-DEEP, une architecture de mod\`{e}le de langage construite autour d'un routage lexical d\'{e}terministe. L'article \'{e}tudie deux composants : (1) \textbf{Token-Routed MLP avec bin-packing glouton Zipf-balanced}, qui assigne les tokens aux experts \`{a} partir d'une table de fr\'{e}quences estim\'{e}e sur le corpus, sans routeur appris ni perte auxiliaire d'\'{e}quilibrage ; et (2) \textbf{Shared Lexical Expert}, un chemin MLP dense partag\'{e} par tous les tokens tandis que les experts rout\'{e}s se sp\'{e}cialisent sur des partitions lexicales. Nous analysons la capacit\'{e} conditionnelle et le compromis de calcul induits par les partitions lexicales d\'{e}terministes, en distinguant explicitement l'\'{e}quilibre de cardinalit\'{e} du vocabulaire et l'\'{e}quilibre de charge corpus sous des distributions Zipfiennes. Notre principal r\'{e}sultat de scaling est une comparaison iso-param\`{e}tres corrig\'{e}e \`{a} $\sim$300M param\`{e}tres sur 8B tokens FineWeb-Edu : une variante Token-Routed r\'{e}siduelle avec grande branche dense partag\'{e}e et petite branche r\'{e}siduelle lexicale rout\'{e}e Zipf paie un co\^{u}t de sp\'{e}cialisation initial, bat d'abord la baseline dense au step 740 sur la perte train logg\'{e}e et au step 750 sur la validation, et termine avec un avantage de perte train liss\'{e} de $-0,0163$. Le claim empirique n'est donc pas que le routage lexical remplace le calcul MLP dense, mais qu'une branche lexicale rout\'{e}e et frequency-balanced peut am\'{e}liorer un backbone MLP dense partag\'{e} lorsqu'elle est utilis\'{e}e comme chemin de sp\'{e}cialisation r\'{e}siduel.
 \end{abstract}
 
 %=============================================================================
@@ -66,6 +66,8 @@ Nous proposons COMPLEXITY-DEEP, une famille d'architectures qui r\'{e}pond aux d
     \item \textbf{Token-Routed MLP avec bin-packing glouton Zipf-balanced} : un routage d\'{e}terministe par token qui \'{e}quilibre la charge attendue des experts sous une distribution de fr\'{e}quences estim\'{e}e, sans routeur appris ni perte auxiliaire d'\'{e}quilibrage.
     \item \textbf{Shared Lexical Expert} : un chemin MLP dense partag\'{e} par tous les tokens, combin\'{e} \`{a} de petits experts rout\'{e}s sp\'{e}cialis\'{e}s sur des partitions lexicales fixes.
 \end{enumerate}
+
+Une le\c{c}on empirique centrale de nos ablations est que la branche lexicale rout\'{e}e doit \^{e}tre vue comme un \emph{chemin de sp\'{e}cialisation r\'{e}siduel} au-dessus d'un MLP dense partag\'{e}, et non comme un remplacement complet du MLP dense. La branche partag\'{e}e porte les motifs syntaxiques et fr\'{e}quents communs; la branche rout\'{e}e ajoute une sp\'{e}cialisation lexicale frequency-balanced. Cette lecture est importante pour interpr\'{e}ter les r\'{e}sultats : les variantes les plus fortes sont shared-plus-routed, tandis que les contr\^{o}les no-shared et shared-only isolent quelle partie du design produit le gain.
 
 %=============================================================================
 \section{Travaux connexes}
@@ -185,7 +187,7 @@ R\'{e}duisant le co\^{u}t MLP de $4\times$ dense \`{a} $1\times$ dense (iso-comp
 \subsubsection{Shared Lexical Expert}
 \label{sec:shared_expert}
 
-Un MLP dense partag\'{e} traite \textit{tous} les tokens, capturant les patterns universels (syntaxe, grammaire), tandis que les experts rout\'{e}s se sp\'{e}cialisent sur leurs sous-ensembles lexicaux. La sortie combine les deux :
+Un MLP dense partag\'{e} traite \textit{tous} les tokens, capturant les patterns universels (syntaxe, grammaire), tandis que les experts rout\'{e}s se sp\'{e}cialisent sur leurs sous-ensembles lexicaux. Nous utilisons la branche rout\'{e}e comme correction lexicale r\'{e}siduelle au chemin dense partag\'{e}, et non comme remplacement du calcul MLP dense. La sortie combine les deux :
 \begin{equation}
 \text{MLP}_{\text{output}}(\mathbf{x}) = \underbrace{\text{SwiGLU}_{\text{shared}}(\mathbf{x})}_{\text{patterns communs}} + \underbrace{\text{SwiGLU}_{e}(\mathbf{x})}_{\text{sp\'{e}cialisation lexicale}}
 \end{equation}
@@ -194,7 +196,7 @@ o\`{u} chaque composant est un MLP SwiGLU standard :
 \text{SwiGLU}_{\text{shared}}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^s_{gate}) \odot \mathbf{x}\mathbf{W}^s_{up})\mathbf{W}^s_{down} \\
 \text{SwiGLU}_{e}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^e_{gate}) \odot \mathbf{x}\mathbf{W}^e_{up})\mathbf{W}^e_{down}
 \end{align}
-Le shared expert a la m\^{e}me taille interm\'{e}diaire qu'un expert rout\'{e} ($d_{ff}/n$), ajoutant $\sim$6\% de param\`{e}tres au mod\`{e}le total. Il \'{e}vite que chaque expert doive r\'{e}apprendre ind\'{e}pendamment les patterns communs de la langue (syntaxe, grammaire, collocations fr\'{e}quentes), leur permettant de se concentrer sur les sp\'{e}cificit\'{e}s lexicales de leur sous-ensemble de tokens.
+Le shared expert a la m\^{e}me taille interm\'{e}diaire qu'un expert rout\'{e} ($d_{ff}/n$), ajoutant $\sim$6\% de param\`{e}tres au mod\`{e}le total. Il \'{e}vite que chaque expert doive r\'{e}apprendre ind\'{e}pendamment les patterns communs de la langue (syntaxe, grammaire, collocations fr\'{e}quentes), leur permettant de se concentrer sur les sp\'{e}cificit\'{e}s lexicales de leur sous-ensemble de tokens. Dans cette lecture, les experts rout\'{e}s fournissent un petit r\'{e}sidu lexical au-dessus d'un backbone dense partag\'{e}; les ablations qui retirent la branche partag\'{e}e testent si le routage seul suffit, tandis que les contr\^{o}les shared-only testent si le gain vient simplement d'une capacit\'{e} dense suppl\'{e}mentaire.
 
 \subsubsection{Bin-packing glouton Zipf-balanced}
 
