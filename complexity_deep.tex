@@ -554,7 +554,7 @@ Specialization type & Lexical & Semantic & Standard MoE \\
 
 We are also running a seven-way 100M ablation suite designed to isolate the contribution of the shared dense path and the lexical routed residual branch. The suite includes dense residual, Zipf shared, Zipf no-shared, modulo shared, random shared, round-robin shared, and shared-only variants. The first two completed $2\times$B200 runs compare the matched dense residual baseline against the Zipf shared lexical-residual variant at the same token budget: $954$ steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ sequence length 2048 $=1.0003$B tokens. These results are an ablation-scale preview, not a replacement for the 300M scaling comparison below.
 
-The Zipf shared variant is already ahead of the dense baseline in both logged final training loss and validation loss: at the last logged training point (step 950, $0.996$B tokens), Zipf shared reaches 4.8205 versus 4.8244 for dense; at the best validation checkpoint (step 750, $0.786$B tokens), Zipf shared reaches 4.8887 versus 4.8958 for dense. This is consistent with the framing that the routed branch is useful as a residual lexical specialization path on top of a shared dense MLP backbone.
+The Zipf shared variant is already ahead of the dense baseline in both logged final training loss and validation loss: at the last logged training point (step 950, $0.996$B tokens), Zipf shared reaches 4.8205 versus 4.8244 for dense; at the best validation checkpoint (step 750, $0.786$B tokens), Zipf shared reaches 4.8887 versus 4.8958 for dense. This is consistent with the framing that the routed branch is useful as a residual lexical specialization path on top of a shared dense MLP backbone. Dense is faster in the current implementation (397k vs. 321k tok/s near the end of these two runs), so this table is matched-token quality evidence rather than a matched-wall-clock efficiency claim.
 
 \begin{figure}[!htbp]
 \centering
@@ -649,7 +649,7 @@ last 50 (smoothed) & --- & 2.9446 & \textbf{2.9283} & $\mathbf{-0.016}$ \\
 
 \FloatBarrier
 
-\paragraph{Training throughput.} The 300M Token-Routed model uses a large shared branch plus a small top-$k=2$ routed branch, so it is not intended as a pure top-1 speed benchmark. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen. The routing table lookup itself is $O(1)$ and does not require learned-router synchronization.
+\paragraph{Training throughput.} The 300M Token-Routed model uses a large shared branch plus a small top-$k=2$ routed branch, so it is not intended as a pure top-1 speed benchmark. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen. A matched-wall-clock comparison would answer a different question---whether the current implementation is more compute-efficient---and would favor the faster dense baseline unless the routed residual branch is further optimized. We therefore report throughput separately and do not claim wall-clock efficiency. The routing table lookup itself is $O(1)$ and does not require learned-router synchronization.
 
 \subsection{Inference Sanity Check}
 \label{sec:inference_perf}
