@@ -71,8 +71,8 @@ class ModelConfig:
 
     # === MoE (Token-Routed) ===
     num_experts: int = 1  # 1 = standard MLP, >1 = MoE
-    token_frequencies: Optional[torch.Tensor] = None  # Zipf-balanced routing
-    routing_strategy: str = "zipf"  # zipf, modulo, round_robin, random, lsh_hidden
+    token_frequencies: Optional[torch.Tensor] = None  # Required only for explicit frequency-aware Zipf routing
+    routing_strategy: str = "modulo_balanced_secondary"
     lsh_routing: bool = False  # Route on a fixed random-hyperplane hash of h (semantic), not the token id
     lsh_bits: int = 0  # Number of hyperplanes (0 = ceil(log2(num_experts)))
     lsh_from_layer: int = 0  # LSH routing only for layers >= this index; earlier layers stay lexical
@@ -83,7 +83,7 @@ class ModelConfig:
     use_shared_routed_gates: bool = False  # Learn scalar gates for shared vs routed expert outputs
     shared_gate_init: float = 1.0  # Initial multiplier for shared expert output
     routed_gate_init: float = 1.0  # Initial multiplier for routed expert output
-    top_k: int = 1  # Token-Routed top-K deterministic (1 = classic Zipf top-1; K>1 activates K Zipf-balanced expert routes)
+    top_k: int = 1  # Deterministic Token-Routed top-K lookup
     top_k_primary_weight: Optional[float] = None  # K>1 blend weight for primary expert (default: 0.95)
     static_expert_capacity: bool = False  # Use fixed per-expert dispatch capacity for torch.export / pipeline tracing
     use_custom_kernels: Any = "auto"  # "auto", True, or False. ROCm defaults to PyTorch fallback in auto mode.
@@ -183,8 +183,13 @@ class ModelConfig:
             raise ValueError("top_k cannot exceed num_experts")
         if self.top_k_primary_weight is not None and not 0.0 <= self.top_k_primary_weight <= 1.0:
             raise ValueError("top_k_primary_weight must be in [0, 1]")
-        if self.routing_strategy not in {"zipf", "modulo", "round_robin", "random", "lsh_hidden"}:
-            raise ValueError("routing_strategy must be one of zipf, modulo, round_robin, random, lsh_hidden")
+        if self.routing_strategy not in {
+            "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
+        }:
+            raise ValueError(
+                "routing_strategy must be one of zipf, modulo, modulo_balanced_secondary, "
+                "round_robin, random, lsh_hidden"
+            )
         if self.lsh_threshold_mode not in {"batch_median", "zero"}:
             raise ValueError("lsh_threshold_mode must be 'batch_median' or 'zero'")
         if self.shared_intermediate_size is not None and self.shared_intermediate_size <= 0:
@@ -250,8 +255,10 @@ class ModelConfig:
         import dataclasses
         valid_keys = {f.name for f in dataclasses.fields(cls)}
         filtered = {k: v for k, v in data.items() if k in valid_keys}
-        if filtered.get("routing_strategy") not in {None, "zipf", "modulo", "round_robin", "random", "lsh_hidden"}:
-            filtered["routing_strategy"] = "zipf"
+        if filtered.get("routing_strategy") not in {
+            None, "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
+        }:
+            filtered["routing_strategy"] = "modulo_balanced_secondary"
         return cls(**filtered)
 
     @classmethod

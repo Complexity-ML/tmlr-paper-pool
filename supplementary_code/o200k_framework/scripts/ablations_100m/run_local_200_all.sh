@@ -4,8 +4,8 @@ set -euo pipefail
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 
 RUNS=(
-  100m_zipf_shared
-  100m_zipf_no_shared
+  100m_modulo_balanced_secondary_shared
+  100m_modulo_balanced_secondary_no_shared
   100m_modulo_shared
   100m_random_shared
   100m_round_robin_shared
@@ -42,8 +42,8 @@ python3.13 - <<'PY'
 import csv, math
 from pathlib import Path
 names = [
-  '100m_zipf_shared',
-  '100m_zipf_no_shared',
+  '100m_modulo_balanced_secondary_shared',
+  '100m_modulo_balanced_secondary_no_shared',
   '100m_modulo_shared',
   '100m_random_shared',
   '100m_round_robin_shared',

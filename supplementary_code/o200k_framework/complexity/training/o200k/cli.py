@@ -156,9 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--routing-strategy",
-        choices=["zipf", "modulo", "round_robin", "random", "lsh_hidden"],
-        default="zipf",
-        help="Token-Routed strategy: zipf/modulo/round_robin/random lexical routing, or lsh_hidden semantic routing.",
+        choices=["zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"],
+        default="modulo_balanced_secondary",
+        help=(
+            "Token-Routed strategy: zipf requires explicit frequencies; "
+            "modulo_balanced_secondary reproduces the reported fixed top-2 lookup."
+        ),
     )
     parser.add_argument(
         "--lsh-bits",

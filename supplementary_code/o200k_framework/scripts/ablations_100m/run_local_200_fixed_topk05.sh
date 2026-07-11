@@ -4,7 +4,7 @@ set -euo pipefail
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 
 RUNS=(
-  100m_zipf_shared
+  100m_modulo_balanced_secondary_shared
   100m_random_shared
   100m_dense_residual
 )
@@ -39,7 +39,7 @@ done
 python3.13 - <<'PY'
 import csv, math
 from pathlib import Path
-names = ['100m_zipf_shared', '100m_random_shared', '100m_dense_residual']
+names = ['100m_modulo_balanced_secondary_shared', '100m_random_shared', '100m_dense_residual']
 print('name,step,train_loss,last_eval_loss,best_eval_loss,tok_s')
 for name in names:
     run=f'local-200-fixedtopk05-{name}'

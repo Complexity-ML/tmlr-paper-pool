@@ -67,6 +67,7 @@ def make_config(args) -> ModelConfig:
         routed_gate_init=args.routed_gate_init,
         top_k=args.top_k,
         top_k_primary_weight=args.top_k_primary_weight,
+        routing_strategy="modulo_balanced_secondary",
     )
 
 
@@ -145,24 +146,17 @@ def load_text_tokens(path: str, tokenizer_path: str) -> list[int]:
 
 def infer_vocab_size(args) -> int:
     if args.vocab_size is not None:
-        return args.vocab_size
-    if args.dataset == "random":
-        return 32000
-    return Tokenizer.load(args.tokenizer).vocab_size
-
-
-def text_token_frequencies(path: str, tokenizer_path: str, vocab_size: int) -> torch.Tensor:
-    tokens = load_text_tokens(path, tokenizer_path)
-    ids = torch.tensor(tokens, dtype=torch.long)
-    ids = ids[(ids >= 0) & (ids < vocab_size)]
-    freqs = torch.zeros(vocab_size, dtype=torch.float32)
-    if ids.numel() > 0:
-        freqs.scatter_add_(0, ids, torch.ones_like(ids, dtype=torch.float32))
-    logger.info(
-        f"Zipf routing frequencies: {int(freqs.sum().item()):,} tokens, "
-        f"{int((freqs > 0).sum().item()):,} vocab entries"
-    )
-    return freqs
+        vocab_size = args.vocab_size
+    elif args.dataset == "random":
+        vocab_size = 32000
+    else:
+        vocab_size = Tokenizer.load(args.tokenizer).vocab_size
+    if vocab_size != 32000:
+        raise ValueError(
+            f"The verified 300M checkpoint requires vocab_size=32000, got {vocab_size}. "
+            "Use the matching 32k tokenizer; the o200k profile is a different model."
+        )
+    return vocab_size
 
 
 def split_tokens(tokens: list[int], eval_ratio: float) -> tuple[list[int], list[int]]:
@@ -293,7 +287,7 @@ def main():
     parser = argparse.ArgumentParser(description="Local ~300M Token-Routed run")
     parser.add_argument("--dataset", choices=["random", "text", "fineweb"], default="random")
     parser.add_argument("--text-file", type=str, default=None)
-    parser.add_argument("--tokenizer", type=str, default="./tokenizer")
+    parser.add_argument("--tokenizer", type=str, default="./tokenizer-32k")
     parser.add_argument("--vocab-size", type=int, default=None)
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=4)
@@ -303,7 +297,7 @@ def main():
     # parameter budget goes to a dense-compatible shared SwiGLU trunk plus a
     # small deterministic Token-Routed residual path. This keeps the model at
     # ~306.5M params like dense while preserving TR specialization capacity.
-    parser.add_argument("--intermediate-size", type=int, default=256)
+    parser.add_argument("--intermediate-size", type=int, default=64)
     parser.add_argument("--shared-intermediate-size", type=int, default=3840)
     parser.add_argument("--shared-gate-init", type=float, default=1.0)
     parser.add_argument("--routed-gate-init", type=float, default=0.1)
@@ -327,23 +321,12 @@ def main():
     parser.add_argument("--save-dir", type=str, default="checkpoints/300m-tr-local")
     parser.add_argument("--save-total-limit", type=int, default=3)
     parser.add_argument("--resume", type=str, default=None)
-    parser.add_argument(
-        "--no-zipf-from-text",
-        action="store_true",
-        help="Disable token-frequency balanced routing when --dataset text.",
-    )
     args = parser.parse_args()
 
     device, distributed, rank, local_rank, world_size = init_distributed(args.seed)
     is_main = rank == 0
     args.vocab_size = infer_vocab_size(args)
     config = make_config(args)
-    if args.dataset == "text" and not args.no_zipf_from_text:
-        config.token_frequencies = text_token_frequencies(
-            args.text_file,
-            args.tokenizer,
-            config.vocab_size,
-        )
     raw_model = ComplexityModel(config).to(device)
     if args.grad_ckpt:
         raw_model.gradient_checkpointing_enable()

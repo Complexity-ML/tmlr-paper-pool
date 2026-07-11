@@ -263,9 +263,10 @@ class TokenRoutedMLP(MLPBase):
         """
         Create deterministic mapping from token ID to expert ID.
 
-        With token_frequencies: greedy bin-packing so each expert gets
-        equal corpus frequency load (Zipf-balanced).
-        Without: simple modulo fallback (token_id % E).
+        ``zipf`` requires token_frequencies and uses greedy frequency bin-packing.
+        ``modulo`` and ``modulo_balanced_secondary`` use token_id % E for the
+        primary route. The latter reproduces the fixed top-2 lookup used by the
+        reported runs while naming its secondary-route behavior explicitly.
 
         When config.per_layer_routing is True, a deterministic permutation
         of the expert indices specific to this layer is applied after the
@@ -273,9 +274,15 @@ class TokenRoutedMLP(MLPBase):
         preserves load distribution) while giving each layer a different
         token→expert assignment, enriching specialization.
         """
-        strategy = str(getattr(self.config, "routing_strategy", "zipf")).lower()
+        strategy = str(getattr(self.config, "routing_strategy", "modulo_balanced_secondary")).lower()
         freqs = getattr(self.config, 'token_frequencies', None)
-        if strategy == "zipf" and freqs is not None:
+        if strategy == "zipf" and freqs is None:
+            raise ValueError(
+                "routing_strategy='zipf' requires token_frequencies; "
+                "use 'modulo_balanced_secondary' to reproduce the reported fixed top-2 lookup"
+            )
+        if strategy == "zipf":
+            assert freqs is not None
             freqs = freqs.detach().cpu().float()
             sorted_indices = freqs.argsort(descending=True)
             mapping = torch.empty(vocab_size, dtype=torch.long, device="cpu")
@@ -285,8 +292,7 @@ class TokenRoutedMLP(MLPBase):
                 e = min(range(num_experts), key=lambda i: expert_loads[i])
                 mapping[token_id] = e
                 expert_loads[e] += freqs[token_id].item()
-        elif strategy in {"zipf", "modulo"}:
-            # zipf without frequencies intentionally falls back to modulo.
+        elif strategy in {"modulo", "modulo_balanced_secondary"}:
             mapping = torch.arange(vocab_size, dtype=torch.long, device="cpu") % num_experts
         elif strategy == "round_robin":
             # Round-robin over frequency rank (or token id if no frequencies),
@@ -345,7 +351,7 @@ class TokenRoutedMLP(MLPBase):
         if top_k == 1:
             return routes
 
-        strategy = str(getattr(self.config, "routing_strategy", "zipf")).lower()
+        strategy = str(getattr(self.config, "routing_strategy", "modulo_balanced_secondary")).lower()
         if strategy in {"modulo", "round_robin"}:
             for route_idx in range(1, top_k):
                 routes[route_idx] = (routes[0] + route_idx) % num_experts

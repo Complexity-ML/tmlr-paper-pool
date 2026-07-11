@@ -70,7 +70,7 @@ class TransformerBlock(nn.Module):
             hidden_act=config.hidden_act,
             num_experts=config.num_experts,
             vocab_size=config.vocab_size,
-            routing_strategy=getattr(config, 'routing_strategy', 'zipf'),
+            routing_strategy=getattr(config, 'routing_strategy', 'modulo_balanced_secondary'),
             token_frequencies=config.token_frequencies,
             lsh_routing=getattr(config, 'lsh_routing', False),
             lsh_bits=getattr(config, 'lsh_bits', 0),

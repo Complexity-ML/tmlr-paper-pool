@@ -18,8 +18,8 @@ export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 PYTHON_BIN="${PYTHON:-python}"
 
 RUNS=(
-  100m_zipf_shared
-  100m_zipf_no_shared
+  100m_modulo_balanced_secondary_shared
+  100m_modulo_balanced_secondary_no_shared
   100m_modulo_shared
   100m_random_shared
   100m_round_robin_shared
@@ -55,8 +55,8 @@ done
 import csv, math
 from pathlib import Path
 names = [
-  '100m_zipf_shared',
-  '100m_zipf_no_shared',
+  '100m_modulo_balanced_secondary_shared',
+  '100m_modulo_balanced_secondary_no_shared',
   '100m_modulo_shared',
   '100m_random_shared',
   '100m_round_robin_shared',

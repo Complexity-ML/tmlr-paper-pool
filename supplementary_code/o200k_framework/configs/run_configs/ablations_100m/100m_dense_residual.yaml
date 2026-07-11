@@ -18,7 +18,7 @@ run:
   top_k: 1
   top_k_primary_weight: 0.5
   top_k_primary_weight_final: 0.5
-  routing_strategy: zipf
+  routing_strategy: modulo_balanced_secondary
   shared_expert: false
   mlp_type: swiglu
   learn_shared_routed_gates: true
@@ -26,5 +26,5 @@ run:
   routed_gate_init: 0.5
   use_custom_kernels: auto
   cggr: auto
-  run_name: abl-4b-100m_dense_residual
-  save_dir: checkpoints/abl-4b-100m_dense_residual
+  run_name: b200-1b-100m_dense_residual
+  save_dir: checkpoints/b200-1b-100m_dense_residual

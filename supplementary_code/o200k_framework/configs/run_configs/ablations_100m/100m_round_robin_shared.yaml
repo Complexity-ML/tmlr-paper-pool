@@ -25,5 +25,5 @@ run:
   routed_gate_init: 0.5
   use_custom_kernels: auto
   cggr: auto
-  run_name: abl-4b-100m_round_robin_shared
-  save_dir: checkpoints/abl-4b-100m_round_robin_shared
+  run_name: b200-1b-100m_round_robin_shared
+  save_dir: checkpoints/b200-1b-100m_round_robin_shared

@@ -24,7 +24,7 @@ class MLPConfig:
     num_experts: int = 1  # 1 = standard MLP, >1 = MoE
     vocab_size: int = 100000  # For token-routed MoE
     hash_routing: str = ""  # "" = modulo (token_id % E), "learned" = learned projection router
-    routing_strategy: str = "zipf"  # zipf, modulo, round_robin, random, lsh_hidden
+    routing_strategy: str = "modulo_balanced_secondary"
     token_frequencies: Optional[torch.Tensor] = None  # [vocab_size] token counts for frequency-balanced routing
     # Semantic LSH routing: route on a fixed random-hyperplane hash of the
     # hidden state (post-attention) instead of the token id. Deterministic, no
@@ -40,7 +40,7 @@ class MLPConfig:
     use_shared_routed_gates: bool = False  # Learn scalar gates for shared vs routed expert outputs.
     shared_gate_init: float = 1.0  # Initial shared expert output multiplier.
     routed_gate_init: float = 1.0  # Initial routed expert output multiplier.
-    top_k: int = 1  # Token-Routed top-K deterministic: each token activates K Zipf-balanced expert routes.
+    top_k: int = 1  # Deterministic Token-Routed top-K lookup.
     top_k_primary_weight: Optional[float] = None  # K>1 primary expert blend weight; None keeps the default 0.95.
     layer_idx: int = 0  # Layer index propagated from the block; used for the built-in per-layer routing permutation.
     static_expert_capacity: bool = False  # Fixed capacity for torch.export / pipeline tracing.
@@ -63,8 +63,13 @@ class MLPConfig:
             raise ValueError("top_k cannot exceed num_experts")
         if self.top_k_primary_weight is not None and not 0.0 <= self.top_k_primary_weight <= 1.0:
             raise ValueError("top_k_primary_weight must be in [0, 1]")
-        if self.routing_strategy not in {"zipf", "modulo", "round_robin", "random", "lsh_hidden"}:
-            raise ValueError("routing_strategy must be one of zipf, modulo, round_robin, random, lsh_hidden")
+        if self.routing_strategy not in {
+            "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
+        }:
+            raise ValueError(
+                "routing_strategy must be one of zipf, modulo, modulo_balanced_secondary, "
+                "round_robin, random, lsh_hidden"
+            )
         if self.lsh_threshold_mode not in {"batch_median", "zero"}:
             raise ValueError("lsh_threshold_mode must be 'batch_median' or 'zero'")
         if isinstance(self.use_cggr, str) and self.use_cggr.strip().lower() not in {"auto", "true", "false"}:
