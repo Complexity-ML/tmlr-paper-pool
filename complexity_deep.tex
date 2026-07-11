@@ -379,6 +379,17 @@ Selection signal & Fixed token identity & Hidden-state content & Standard MoE \\
 \end{tabular}
 \end{table}
 
+\subsection{Dense Computational Substrate for Conditional Modules}
+
+The evaluated architecture can be viewed as an instance of a broader dense-first integration pattern. Let $F_{\mathrm{dense}}$ denote a transformation applied uniformly to every token and $G_{\mathrm{conditional}}$ a structured module whose parameters or execution path depend on a discrete condition $z$:
+\begin{equation}
+\mathbf{y}=F_{\mathrm{dense}}(\mathbf{x};\theta_s)+\alpha\,G_{\mathrm{conditional}}(\mathbf{x},z;\theta_c).
+\label{eq:dense_conditional_substrate}
+\end{equation}
+The dense path provides a regular batched computation expressible through standard matrix-multiplication kernels. The conditional path can remain a narrow residual, limiting the fraction of the layer affected by irregular dispatch, variable group sizes, and small expert kernels. In COMPLEXITY-DEEP, $F_{\mathrm{dense}}$ is the shared SwiGLU branch, $z$ is token identity, and $G_{\mathrm{conditional}}$ is the deterministic top-2 lexical residual.
+
+This decomposition does not make arbitrary Python objects directly executable by PyTorch. A conditional module must still be represented using tensors, registered parameters, and differentiable tensor operations; efficient execution may additionally require grouped matrix multiplication or specialized kernels. The shared path instead preserves a large regular computational substrate while the conditional component remains narrow and structured. Our experiments validate only the lexical-routing instance of this pattern. They do not establish that arbitrary conditional modules benefit from the same decomposition or that it improves wall-clock efficiency; the lower measured throughput of the current routed implementation shows that sparse-dispatch overhead remains material.
+
 \subsection{Exploratory 100M Ablations (1B tokens)}
 \label{sec:ablation_100m_preview}
 
