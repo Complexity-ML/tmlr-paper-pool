@@ -377,17 +377,6 @@ Signal de s\'{e}lection & Identit\'{e} fixe du token & Contenu de l'\'{e}tat cac
 \end{tabular}
 \end{table}
 
-\subsection{Substrat computationnel dense pour modules conditionnels}
-
-L'architecture \'{e}valu\'{e}e peut \^{e}tre interpr\'{e}t\'{e}e comme un cas particulier d'un principe d'int\'{e}gration dense-first. Soit $F_{\mathrm{dense}}$ une transformation appliqu\'{e}e uniform\'{e}ment \`{a} tous les tokens et $G_{\mathrm{conditional}}$ un module structur\'{e} dont les param\`{e}tres ou le chemin d'ex\'{e}cution d\'{e}pendent d'une condition discr\`{e}te $z$ :
-\begin{equation}
-\mathbf{y}=F_{\mathrm{dense}}(\mathbf{x};\theta_s)+\alpha\,G_{\mathrm{conditional}}(\mathbf{x},z;\theta_c).
-\label{eq:dense_conditional_substrate}
-\end{equation}
-Le chemin dense fournit un calcul batch\'{e} r\'{e}gulier exprimable par des multiplications matricielles standard. Le chemin conditionnel peut rester un r\'{e}sidu \'{e}troit, limitant la fraction de la couche affect\'{e}e par le dispatch irr\'{e}gulier, les tailles de groupes variables et les petits kernels experts. Dans COMPLEXITY-DEEP, $F_{\mathrm{dense}}$ est la branche SwiGLU partag\'{e}e, $z$ est l'identit\'{e} du token et $G_{\mathrm{conditional}}$ est le r\'{e}sidu lexical top-2 d\'{e}terministe.
-
-Cette d\'{e}composition ne rend pas des objets Python arbitraires directement ex\'{e}cutables par PyTorch. Un module conditionnel doit toujours \^{e}tre repr\'{e}sent\'{e} par des tensors, des param\`{e}tres enregistr\'{e}s et des op\'{e}rations tensorielles diff\'{e}rentiables ; une ex\'{e}cution efficace peut en outre n\'{e}cessiter des multiplications matricielles group\'{e}es ou des kernels sp\'{e}cialis\'{e}s. Le chemin partag\'{e} pr\'{e}serve plut\^{o}t un large substrat computationnel r\'{e}gulier tandis que le composant conditionnel reste \'{e}troit et structur\'{e}. Nos exp\'{e}riences valident uniquement l'instance de routage lexical. Elles ne d\'{e}montrent ni que des modules conditionnels arbitraires b\'{e}n\'{e}ficient de la m\^{e}me d\'{e}composition, ni un gain wall-clock ; le d\'{e}bit inf\'{e}rieur de l'impl\'{e}mentation rout\'{e}e montre que l'overhead du dispatch sparse reste significatif.
-
 \subsection{Ablations exploratoires 100M (1B tokens)}
 \label{sec:ablation_100m_preview}
 
