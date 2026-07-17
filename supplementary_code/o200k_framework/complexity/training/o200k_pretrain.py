@@ -16,6 +16,7 @@ import csv
 import logging
 import math
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
@@ -87,6 +88,8 @@ def infer_vocab_size(args) -> int:
 def main():
     parser = build_parser()
     args = parse_args_with_yaml_config(parser)
+    if args.gradient_accumulation_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be at least 1")
     profile = PROFILES[args.profile]
     for key in (
         "hidden_size",
@@ -281,14 +284,12 @@ def main():
     tokens_since_log = 0
     last_step = start_step
 
-    for step, batch in enumerate(train_loader, start=start_step + 1):
-        if step > args.steps:
-            break
+    train_iter = iter(train_loader)
+    for step in range(start_step + 1, args.steps + 1):
         last_step = step
         should_eval = args.eval_steps > 0 and step % args.eval_steps == 0
         should_log = step == 1 or step % args.log_steps == 0 or should_eval
-        input_ids = batch["input_ids"].to(device, non_blocking=True)
-        labels = batch["labels"].to(device, non_blocking=True)
+
         topk_primary_weight = scheduled_topk_primary_weight(
             step - 1,
             args.steps,
@@ -328,49 +329,90 @@ def main():
             args.expert_diversity_lambda,
             args.expert_diversity_schedule_ratio,
         )
-        with autocast(device, dtype=amp_dtype, enabled=amp_dtype is not None):
-            outputs = model(input_ids, return_logits=False)
-            if args.loss_backend_active == "liger":
-                loss, _ = fused_linear_causal_lm_loss(
-                    outputs["last_hidden_state"],
-                    raw_model.embed_tokens.weight,
-                    labels,
-                    label_smoothing=args.label_smoothing,
-                    z_loss_coef=args.z_loss,
-                    sync_metrics=False,
-                )
-            else:
-                loss, _ = causal_lm_loss_from_hidden(
-                    outputs["last_hidden_state"],
-                    raw_model.embed_tokens.weight,
-                    labels,
-                    label_smoothing=args.label_smoothing,
-                    z_loss_coef=args.z_loss,
-                    chunk_tokens=args.loss_chunk_tokens,
-                    checkpoint_chunks=args.loss_checkpoint_chunks,
-                    sync_metrics=False,
-                )
-            diversity = expert_diversity_loss(raw_model, args.expert_diversity_target)
-            routing_aux = learned_router_auxiliary_loss(raw_model)
-            total_loss = (
-                loss
-                if diversity is None or diversity_lambda <= 0.0
-                else loss + diversity_lambda * diversity
+        micro_losses = []
+        micro_total_losses = []
+        micro_diversity_losses = []
+        micro_router_losses = []
+        optimizer_expert_counts = None
+        for micro_idx in range(args.gradient_accumulation_steps):
+            batch = next(train_iter)
+            input_ids = batch["input_ids"].to(device, non_blocking=True)
+            labels = batch["labels"].to(device, non_blocking=True)
+            no_sync = getattr(model, "no_sync", None)
+            sync_context = (
+                no_sync()
+                if distributed
+                and micro_idx + 1 < args.gradient_accumulation_steps
+                and no_sync is not None
+                else nullcontext()
             )
+            with sync_context:
+                with autocast(device, dtype=amp_dtype, enabled=amp_dtype is not None):
+                    outputs = model(input_ids, return_logits=False)
+                    if args.loss_backend_active == "liger":
+                        loss, _ = fused_linear_causal_lm_loss(
+                            outputs["last_hidden_state"],
+                            raw_model.embed_tokens.weight,
+                            labels,
+                            label_smoothing=args.label_smoothing,
+                            z_loss_coef=args.z_loss,
+                            sync_metrics=False,
+                        )
+                    else:
+                        loss, _ = causal_lm_loss_from_hidden(
+                            outputs["last_hidden_state"],
+                            raw_model.embed_tokens.weight,
+                            labels,
+                            label_smoothing=args.label_smoothing,
+                            z_loss_coef=args.z_loss,
+                            chunk_tokens=args.loss_chunk_tokens,
+                            checkpoint_chunks=args.loss_checkpoint_chunks,
+                            sync_metrics=False,
+                        )
+                    diversity = expert_diversity_loss(raw_model, args.expert_diversity_target)
+                    routing_aux = learned_router_auxiliary_loss(raw_model)
+                    total_loss = (
+                        loss
+                        if diversity is None or diversity_lambda <= 0.0
+                        else loss + diversity_lambda * diversity
+                    )
+                    if routing_aux is not None:
+                        total_loss = total_loss + routing_aux
+                (total_loss / args.gradient_accumulation_steps).backward()
+            micro_losses.append(loss.detach())
+            micro_total_losses.append(total_loss.detach())
+            if diversity is not None:
+                micro_diversity_losses.append(diversity.detach())
             if routing_aux is not None:
-                total_loss = total_loss + routing_aux
-        total_loss.backward()
+                micro_router_losses.append(routing_aux.detach())
+            if hasattr(optimizer, "update_token_counts"):
+                counts = batch_expert_counts(
+                    raw_model, input_ids, config.num_experts, distributed
+                )
+                optimizer_expert_counts = (
+                    counts if optimizer_expert_counts is None else optimizer_expert_counts + counts
+                )
+
+        loss = torch.stack(micro_losses).mean()
+        total_loss = torch.stack(micro_total_losses).mean()
+        diversity = (
+            torch.stack(micro_diversity_losses).mean() if micro_diversity_losses else None
+        )
+        routing_aux = torch.stack(micro_router_losses).mean() if micro_router_losses else None
         if args.max_grad_norm and args.max_grad_norm > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-        if hasattr(optimizer, "update_token_counts"):
-            optimizer.update_token_counts(
-                batch_expert_counts(raw_model, input_ids, config.num_experts, distributed)
-            )
+        if optimizer_expert_counts is not None:
+            optimizer.update_token_counts(optimizer_expert_counts)
         optimizer.step()
         update_loss_free_router_biases(raw_model, distributed)
         scheduler.step()
 
-        tokens_since_log += args.batch_size * args.seq_len * world_size
+        tokens_since_log += (
+            args.batch_size
+            * args.seq_len
+            * world_size
+            * args.gradient_accumulation_steps
+        )
         if pbar is not None:
             pbar.update(1)
 

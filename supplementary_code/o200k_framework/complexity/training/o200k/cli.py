@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vocab-size", type=int, default=None)
     parser.add_argument("--steps", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--seq-len", type=int, default=256)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--optimizer", choices=["adamw", "muon_tr"], default="adamw")

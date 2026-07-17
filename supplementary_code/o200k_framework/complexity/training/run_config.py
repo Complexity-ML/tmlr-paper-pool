@@ -87,7 +87,12 @@ def args_to_run_config(
     backend: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     args_dict = vars(args).copy()
-    tokens_per_step = int(args_dict["batch_size"]) * int(args_dict["seq_len"]) * int(world_size)
+    tokens_per_step = (
+        int(args_dict["batch_size"])
+        * int(args_dict["seq_len"])
+        * int(world_size)
+        * int(args_dict.get("gradient_accumulation_steps", 1))
+    )
     total_tokens = tokens_per_step * int(args_dict["steps"])
     return {
         "schema_version": 1,
@@ -170,7 +175,8 @@ def format_run_summary(run_config: dict[str, Any]) -> list[str]:
         ),
         (
             "Schedule: "
-            f"lr={args['lr']}, batch/GPU={args['batch_size']}, seq={args['seq_len']}, "
+            f"lr={args['lr']}, micro_batch/GPU={args['batch_size']}, "
+            f"accum={args.get('gradient_accumulation_steps', 1)}, seq={args['seq_len']}, "
             f"world={run_config['world_size']}"
         ),
         (

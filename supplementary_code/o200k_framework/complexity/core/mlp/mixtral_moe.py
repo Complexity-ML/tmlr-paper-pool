@@ -123,7 +123,8 @@ class MixtralMoE(MLPBase):
             routed_out.index_add_(0, assigned_tokens, expert_out)
 
         counts = torch.bincount(flat_expert_ids, minlength=self.num_experts)
-        self.last_expert_counts.copy_(counts.detach().to(self.last_expert_counts.dtype))
+        if self.training:
+            self.last_expert_counts.add_(counts.detach().to(self.last_expert_counts.dtype))
         self.expert_counts.add_(counts.detach().to(self.expert_counts.dtype))
         self.last_topk_expert_ids = topk_expert_ids.detach()
 
@@ -161,6 +162,7 @@ class MixtralMoE(MLPBase):
         correction = torch.sign(counts.mean() - counts)
         self.router_selection_bias.add_(self.router_bias_update_rate * correction)
         self.router_selection_bias.sub_(self.router_selection_bias.mean())
+        self.last_expert_counts.zero_()
 
     @torch.no_grad()
     def reset_expert_counts(self) -> None:

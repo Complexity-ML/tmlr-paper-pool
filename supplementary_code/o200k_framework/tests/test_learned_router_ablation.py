@@ -108,6 +108,33 @@ def test_o200k_parser_propagates_learned_router_balance_mode():
     assert config.router_bias_update_rate == 0.003
 
 
+def test_run_config_counts_gradient_accumulation_in_effective_token_budget():
+    from complexity.training.o200k import build_parser
+    from complexity.training.run_config import args_to_run_config
+
+    args = build_parser().parse_args(
+        [
+            "--steps",
+            "954",
+            "--batch-size",
+            "128",
+            "--seq-len",
+            "2048",
+            "--gradient-accumulation-steps",
+            "2",
+        ]
+    )
+    run_config = args_to_run_config(
+        args,
+        model_config={},
+        params=1,
+        world_size=2,
+    )
+
+    assert run_config["tokens_per_step"] == 1_048_576
+    assert run_config["total_tokens"] == 1_000_341_504
+
+
 def test_training_helpers_aggregate_aux_loss_and_update_loss_free_bias():
     from complexity.training.o200k.runtime import (
         learned_router_auxiliary_loss,
@@ -172,7 +199,8 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "100m_learned_aux_shared" in text
     assert "100m_learned_loss_free_shared" in text
     assert "--steps 954" in text
-    assert "--batch-size 256" in text
+    assert "--batch-size 128" in text
     assert "--seq-len 2048" in text
+    assert "--gradient-accumulation-steps 2" in text
     assert "--tokenizer o200k_base" in text
     assert "--vocab-size 200019" in text
