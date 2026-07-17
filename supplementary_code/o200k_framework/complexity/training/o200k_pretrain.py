@@ -186,21 +186,30 @@ def main():
         logger.info(f"Model: {params / 1e6:.1f}M params")
         for line in format_run_summary(run_config):
             logger.info(line)
-        logger.info(
-            f"Config: mlp={config.mlp_type}, router_balance={config.router_balance_mode}, "
-            f"hidden={args.hidden_size}, layers={args.num_hidden_layers}, "
-            f"GQA={args.num_attention_heads}/{args.num_key_value_heads}, "
-            f"inter={args.intermediate_size}, shared_inter={args.shared_intermediate_size}, "
-            f"shared_chunk={args.shared_expert_chunk_tokens}, "
-            f"grad_ckpt={args.grad_ckpt}, "
-            f"experts=4, top_k={args.top_k}, primary_w={args.top_k_primary_weight}, "
-            f"primary_w_final={args.top_k_primary_weight_final}, "
-            f"lsh_threshold={getattr(args, 'lsh_threshold_mode', 'zero')}, "
-            f"learn_gates={args.learn_shared_routed_gates}, "
-            f"gates=({args.shared_gate_init}->{args.shared_gate_final},"
-            f"{args.routed_gate_init}->{args.routed_gate_final}), "
-            f"expert_diversity={args.expert_diversity_lambda} target={args.expert_diversity_target}"
-        )
+        dense_mlp_types = {"swiglu", "silu", "llama", "standard", "gelu", "geglu"}
+        if config.mlp_type in dense_mlp_types:
+            logger.info(
+                f"Config: mlp={config.mlp_type}, hidden={args.hidden_size}, "
+                f"layers={args.num_hidden_layers}, "
+                f"GQA={args.num_attention_heads}/{args.num_key_value_heads}, "
+                f"inter={args.intermediate_size}, grad_ckpt={args.grad_ckpt}"
+            )
+        else:
+            logger.info(
+                f"Config: mlp={config.mlp_type}, router_balance={config.router_balance_mode}, "
+                f"hidden={args.hidden_size}, layers={args.num_hidden_layers}, "
+                f"GQA={args.num_attention_heads}/{args.num_key_value_heads}, "
+                f"inter={args.intermediate_size}, shared_inter={args.shared_intermediate_size}, "
+                f"shared_chunk={args.shared_expert_chunk_tokens}, "
+                f"grad_ckpt={args.grad_ckpt}, "
+                f"experts=4, top_k={args.top_k}, primary_w={args.top_k_primary_weight}, "
+                f"primary_w_final={args.top_k_primary_weight_final}, "
+                f"lsh_threshold={getattr(args, 'lsh_threshold_mode', 'zero')}, "
+                f"learn_gates={args.learn_shared_routed_gates}, "
+                f"gates=({args.shared_gate_init}->{args.shared_gate_final},"
+                f"{args.routed_gate_init}->{args.routed_gate_final}), "
+                f"expert_diversity={args.expert_diversity_lambda} target={args.expert_diversity_target}"
+            )
         logger.info(
             "Loss: "
             f"backend={args.loss_backend_active}, chunk_tokens={args.loss_chunk_tokens}, "
