@@ -124,7 +124,11 @@ class MixtralMoE(MLPBase):
 
         counts = torch.bincount(flat_expert_ids, minlength=self.num_experts)
         if self.training:
-            self.last_expert_counts.add_(counts.detach().to(self.last_expert_counts.dtype))
+            current_counts = counts.detach().to(self.last_expert_counts.dtype)
+            if self.router_balance_mode == "loss_free_bias":
+                self.last_expert_counts.add_(current_counts)
+            else:
+                self.last_expert_counts.copy_(current_counts)
         self.expert_counts.add_(counts.detach().to(self.expert_counts.dtype))
         self.last_topk_expert_ids = topk_expert_ids.detach()
 
