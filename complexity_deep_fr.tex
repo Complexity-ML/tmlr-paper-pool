@@ -46,7 +46,8 @@
 \maketitle
 
 \begin{abstract}
-Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par une table fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL sur le flux d'\'{e}valuation de 2,9329 contre 2,9482 pour la baseline dense au dernier checkpoint d'\'{e}valuation commun. Ce flux provient du split d'entra\^{i}nement et l'impl\'{e}mentation rout\'{e}e est plus lente. Un diagnostic s\'{e}par\'{e} \`{a} 99,6M tokens place un routeur contextuel top-2 avec \'{e}quilibrage auxiliaire l\'{e}g\`{e}rement devant des contr\^{o}les dense et fixe par identit\'{e} de token appari\'{e}s. Au budget appari\'{e} de 1,0003B tokens sur la m\^{e}me configuration o200k, le contr\^{o}le dense atteint toutefois une NLL de 4,8433 contre 4,8580 pour le routeur appris, inversant l'ordre observ\'{e} au budget court. Une \'{e}valuation held-out standardis\'{e}e et la r\'{e}plication multi-seed restent ouvertes.
+Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par une table fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL sur le flux d'\'{e}valuation de 2,9329 contre 2,9482 pour la baseline dense au dernier checkpoint d'\'{e}valuation commun. Ce flux provient du split d'entra\^{i}nement et l'impl\'{e}mentation rout\'{e}e est plus lente. Les checkpoints finaux restent proches sur ARC-Easy, PIQA et HellaSwag en zero-shot, tandis que le mod\`{e}le rout\'{e} obtient une perplexit\'{e} WikiText-2 modestement inf\'{e}rieure. Un diagnostic s\'{e}par\'{e} de routeur appris inverse son avantage au budget court face au dense \`{a} un budget appari\'{e} de 1,0003B tokens. La r\'{e}plication multi-seed reste ouverte.
+\par
 \end{abstract}
 
 %=============================================================================
@@ -60,7 +61,7 @@ Nous testons cette id\'{e}e avec une architecture volontairement asym\'{e}trique
 
 La comparaison principale utilise deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s avec le m\^{e}me budget de 8B tokens. Ils partagent leur backbone et leur largeur MLP stock\'{e}e : l'un utilise une largeur dense de 4 096, l'autre une largeur partag\'{e}e de 3 840 et quatre experts de largeur 64, dont deux actifs par token. Au dernier point du flux d'\'{e}valuation fixe, le mod\`{e}le rout\'{e} atteint 2,9329 contre 2,9482. Il s'entra\^{i}ne plus lentement dans l'impl\'{e}mentation actuelle, et le flux d'\'{e}valuation provient du split train FineWeb-Edu.
 
-Cette \'{e}tude apporte une observation contr\^{o}l\'{e}e, pas un verdict g\'{e}n\'{e}ral sur le routage d'experts. Elle d\'{e}finit une architecture shared-plus-residual o\`{u} l'identit\'{e} du token contr\^{o}le uniquement la s\'{e}lection, v\'{e}rifie les tables r\'{e}alis\'{e}es et le comptage de capacit\'{e}, puis rapporte la trajectoire compl\`{e}te \`{a} tokens appari\'{e}s. Nous rapportons aussi un diagnostic de routeurs contextuels avec contr\^{o}les dense et fixe par identit\'{e} de token appari\'{e}s au budget court, suivi d'une comparaison routeur appris/dense \`{a} 1B tokens.
+Cette \'{e}tude apporte une observation contr\^{o}l\'{e}e, pas un verdict g\'{e}n\'{e}ral sur le routage d'experts. Elle d\'{e}finit une architecture shared-plus-residual o\`{u} l'identit\'{e} du token contr\^{o}le uniquement la s\'{e}lection, v\'{e}rifie les tables r\'{e}alis\'{e}es et le comptage de capacit\'{e}, puis rapporte la trajectoire compl\`{e}te \`{a} tokens appari\'{e}s et une \'{e}valuation zero-shot des checkpoints finaux. Nous rapportons aussi un diagnostic de routeurs contextuels avec contr\^{o}les dense et fixe par identit\'{e} de token appari\'{e}s au budget court, suivi d'une comparaison routeur appris/dense \`{a} 1B tokens.
 
 %=============================================================================
 \section{Travaux connexes}
@@ -182,6 +183,11 @@ pour $L$ couches \citep{radford2019language}.
 
 L'inspection des checkpoints montre que les buffers de lookup primaire et secondaire des 18 couches correspondent exactement aux \'{e}quations~\ref{eq:routing}--\ref{eq:secondary_routing}. Nous identifions donc le m\'{e}canisme r\'{e}alis\'{e} directement depuis les assignations sauvegard\'{e}es : routage primaire modulo permut\'{e} et assignation secondaire \'{e}quilibr\'{e}e par cardinalit\'{e}, plut\^{o}t que depuis le nom historique du run. Le flux d'\'{e}valuation fixe provient du split train FineWeb-Edu ; il est identique entre les deux runs mais ne constitue pas un holdout ind\'{e}pendant.
 
+\subsection{Protocole des benchmarks standard}
+\label{sec:benchmark_protocol}
+
+Nous exportons les checkpoints finaux du step 7 629 vers le m\^{e}me runtime d'inf\'{e}rence BF16 et \'{e}valuons les deux mod\`{e}les sans fine-tuning sp\'{e}cifique aux t\^{a}ches. EleutherAI LM Evaluation Harness v0.4.12 ex\'{e}cute ARC-Easy, PIQA, HellaSwag et WikiText-2 sans limite d'exemples, avec des prompts zero-shot, un batching automatique, un contexte maximal de 2 048 et des graines identiques. Nous rapportons l'accuracy normalis\'{e}e par longueur pour les trois t\^{a}ches \`{a} choix multiples et la perplexit\'{e} par mot pour WikiText-2. Un contr\^{o}le de g\'{e}n\'{e}ration appari\'{e} sur cinq prompts est ex\'{e}cut\'{e} avec CUDA Graph activ\'{e} avant l'\'{e}valuation compl\`{e}te. Les commandes exactes, hashes des checkpoints, versions des paquets, m\'{e}triques agr\'{e}g\'{e}es et le sanity record du runtime figurent dans les artefacts suppl\'{e}mentaires.
+
 %=============================================================================
 \section{R\'{e}sultats}
 \label{sec:results}
@@ -223,6 +229,28 @@ Train & 7620 & 7,99B  & 2,9324 & \textbf{2,9231} & $\mathbf{-0,009}$ \\
 \paragraph{Trafic de routage.} L'utilisation finale des experts est 0,2481/0,2635/0,2481/0,2403, sans expert mort. Il s'agit d'une propri\'{e}t\'{e} observ\'{e}e du run, pas d'une cons\'{e}quence de l'\'{e}quilibre de cardinalit\'{e} du vocabulaire.
 
 \paragraph{Throughput d'entra\^{i}nement.} Sur le m\^{e}me syst\`{e}me $8\times$B300 et avec le m\^{e}me batch global, dense atteint environ 0,95M tokens/s et le mod\`{e}le \`{a} r\'{e}siduel token-identity environ 0,75M tokens/s. La comparaison de qualit\'{e} est appari\'{e}e par tokens, pas par temps mural.
+
+\subsection{\'{E}valuation zero-shot des checkpoints 300M finaux}
+\label{sec:benchmark_300m}
+
+La Table~\ref{tab:benchmark_300m} rapporte les runs complets, sans sous-\'{e}chantillonnage. Le checkpoint rout\'{e} est 0,46 point de pourcentage sous le dense sur ARC-Easy, \`{a} \'{e}galit\'{e} \`{a} la pr\'{e}cision affich\'{e}e sur PIQA, 0,39 point au-dessus sur HellaSwag et obtient une perplexit\'{e} WikiText-2 inf\'{e}rieure de 0,59. Chaque \'{e}cart d'accuracy est inf\'{e}rieur \`{a} une erreur standard rapport\'{e}e : ce panneau soutient donc une quasi-parit\'{e}, pas une affirmation de sup\'{e}riorit\'{e} par t\^{a}che.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{\'{E}valuation zero-shot des checkpoints 300M finaux appari\'{e}s. ARC-Easy (2 376 exemples), PIQA (1 838) et HellaSwag (10 042) rapportent l'accuracy normalis\'{e}e par longueur en pourcentage ; WikiText-2 rapporte la perplexit\'{e} par mot (plus bas est meilleur).}
+\label{tab:benchmark_300m}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Mod\`{e}le} & \textbf{ARC-Easy} & \textbf{PIQA} & \textbf{HellaSwag} & \textbf{WikiText-2 PPL} \\
+\midrule
+Dense & \textbf{49,07} & \textbf{63,49} & 33,67 & 35,79 \\
+R\'{e}siduel token-identity & 48,61 & \textbf{63,49} & \textbf{34,06} & \textbf{35,20} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
 
 \subsection{Ablations 100M}
 \label{sec:ablation_100m}
@@ -302,7 +330,7 @@ Le r\'{e}sultat montre qu'un ID fixe peut s\'{e}lectionner un sous-espace de par
 
 L'exp\'{e}rience n'isole pas non plus l'identit\'{e} du token de toutes les explications alternatives. Les ablations 100M de la Section~\ref{sec:ablation_100m} incluent des contr\^{o}les r\'{e}siduels, al\'{e}atoires et contextuels appris. Le panneau court favorise l'\'{e}quilibrage auxiliaire, mais son contr\^{o}le dense appari\'{e} passe devant \`{a} 1B tokens tandis que le routeur promu termine sans expert mort. Ces panneaux utilisent une graine, un autre tokenizer/shard et un autre mat\'{e}riel que le panneau historique. Ils comparent donc le routage appris au calcul dense sur une configuration sans \'{e}tablir la sup\'{e}riorit\'{e} g\'{e}n\'{e}rale du routage appris ou fixe. Les contr\^{o}les fixes historiques ne permettent pas non plus un classement causal des assignations car certains contr\^{o}les nominaux r\'{e}alisent les m\^{e}mes assignations primaires.
 
-La comparaison 300M utilise une graine par architecture. Son flux d'\'{e}valuation vient du split train et aucune \'{e}valuation downstream standardis\'{e}e ou OOD n'est disponible pour les checkpoints rapport\'{e}s. L'impl\'{e}mentation rout\'{e}e est plus lente que dense au m\^{e}me batch. Enfin, les buffers de lookup sauvegard\'{e}s r\'{e}alisent la r\`{e}gle modulo-primary/secondary-balanced par cardinalit\'{e}, et non une assignation d\'{e}pendant des fr\'{e}quences. Ces limites pr\'{e}servent l'observation centrale mais la restreignent \`{a} la perte matched-token de cette paire de runs.
+La comparaison 300M utilise une graine par architecture et son flux fixe d'\'{e}valuation de perte vient du split train. Le panneau zero-shot standard est limit\'{e} \`{a} trois t\^{a}ches \`{a} choix multiples relativement simples et WikiText-2 ; ses \'{e}carts d'accuracy sont inf\'{e}rieurs \`{a} une erreur standard et il ne remplace ni une \'{e}valuation OOD plus large ni une r\'{e}plication multi-seed. L'impl\'{e}mentation rout\'{e}e est plus lente que dense au m\^{e}me batch. Enfin, les buffers de lookup sauvegard\'{e}s r\'{e}alisent la r\`{e}gle modulo-primary/secondary-balanced par cardinalit\'{e}, et non une assignation d\'{e}pendant des fr\'{e}quences. Ces limites pr\'{e}servent l'observation centrale mais en restreignent la port\'{e}e.
 
 %=============================================================================
 \section{Conclusion}

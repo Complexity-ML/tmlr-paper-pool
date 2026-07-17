@@ -46,7 +46,8 @@
 \maketitle
 
 \begin{abstract}
-Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. A separate 99.6M-token diagnostic finds a contextual top-2 router with auxiliary load balancing slightly ahead of matched dense and fixed token-identity controls. At a matched 1.0003B-token budget on the same o200k setup, however, the dense control reaches evaluation-stream NLL 4.8433 versus 4.8580 for the learned router, reversing the short-budget ordering. Standardized held-out evaluation and replication across seeds remain open.
+Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. The final checkpoints remain close on zero-shot ARC-Easy, PIQA, and HellaSwag, while the routed model has modestly lower WikiText-2 perplexity. A separate learned-router diagnostic reverses its short-budget advantage over dense at a matched 1.0003B-token budget. Replication across seeds remains open.
+\par
 \end{abstract}
 
 %=============================================================================
@@ -60,7 +61,7 @@ We test this idea in a deliberately asymmetric design. Every token passes throug
 
 The primary comparison uses two 306.5M-parameter models trained for the same 8B-token budget. The models share their transformer backbone and stored MLP width; one uses a dense width of 4,096, while the other divides that width into a shared width of 3,840 and four routed experts of width 64, with two active per token. At the last common checkpoint of a fixed evaluation stream, the routed model reaches NLL 2.9329 and the dense model 2.9482. The routed model trains more slowly in the current implementation, and the evaluation stream comes from the FineWeb-Edu training split.
 
-This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing tables and capacity accounting, and reports the full matched-token trajectory. We also report a separate learned-router diagnostic with matched dense and fixed token-identity controls at short budget, followed by a 1B-token learned-router/dense comparison.
+This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing tables and capacity accounting, and reports the full matched-token trajectory and a zero-shot evaluation of the final checkpoints. We also report a separate learned-router diagnostic with matched dense and fixed token-identity controls at short budget, followed by a 1B-token learned-router/dense comparison.
 
 %=============================================================================
 \section{Related Work}
@@ -181,6 +182,11 @@ for $L$ layers \citep{radford2019language}.
 
 Checkpoint inspection shows that the primary and secondary lookup buffers in all 18 layers exactly match Equations~\ref{eq:routing}--\ref{eq:secondary_routing}. We therefore identify the realized mechanism from the stored assignments themselves as permuted-modulo primary routing with a cardinality-balanced secondary assignment, rather than inferring it from the historical run label. The fixed evaluation stream is drawn from the FineWeb-Edu training split; it is consistent across the two runs but is not an independent held-out set.
 
+\subsection{Standard benchmark protocol}
+\label{sec:benchmark_protocol}
+
+We export the final step-7,629 checkpoints to the same BF16 inference runtime and evaluate both without task-specific fine-tuning. EleutherAI LM Evaluation Harness v0.4.12 runs ARC-Easy, PIQA, HellaSwag, and WikiText-2 with no sample limit, zero-shot prompts, automatic batching, a maximum context of 2,048, and identical seeds. We report length-normalized accuracy for the three multiple-choice tasks and word perplexity for WikiText-2. A paired five-prompt generation check is run with CUDA Graph execution enabled before the full evaluation. The exact commands, checkpoint hashes, package versions, aggregate metrics, and runtime sanity record are included with the supplementary artifacts.
+
 %=============================================================================
 \section{Results}
 \label{sec:results}
@@ -225,6 +231,28 @@ Train & 7620 & 7.99B  & 2.9324 & \textbf{2.9231} & $\mathbf{-0.009}$ \\
 \paragraph{Routing traffic.} Final expert utilization is 0.2481/0.2635/0.2481/0.2403, with no dead expert. This is an observed property of the run, not a consequence of equal vocabulary cardinality.
 
 \paragraph{Training throughput.} On the same $8\times$B300 system and global batch, dense training reaches approximately 0.95M tokens/s and token-identity residual training approximately 0.75M tokens/s. The reported quality comparison is matched by tokens, not by elapsed time.
+
+\subsection{Zero-shot evaluation of the final 300M checkpoints}
+\label{sec:benchmark_300m}
+
+Table~\ref{tab:benchmark_300m} reports the complete, untruncated benchmark runs. The token-routed checkpoint is 0.46 percentage points below dense on ARC-Easy, tied at the displayed precision on PIQA, 0.39 points above dense on HellaSwag, and has 0.59 lower WikiText-2 word perplexity. Each accuracy difference is smaller than one reported standard error, so this panel supports near-parity rather than a task-level superiority claim.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{Zero-shot evaluation of the final matched 300M checkpoints. ARC-Easy (2,376 examples), PIQA (1,838), and HellaSwag (10,042) report length-normalized accuracy in percent; WikiText-2 reports word perplexity (lower is better).}
+\label{tab:benchmark_300m}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{ARC-Easy} & \textbf{PIQA} & \textbf{HellaSwag} & \textbf{WikiText-2 PPL} \\
+\midrule
+Dense & \textbf{49.07} & \textbf{63.49} & 33.67 & 35.79 \\
+Token-identity residual & 48.61 & \textbf{63.49} & \textbf{34.06} & \textbf{35.20} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
 
 \subsection{100M Ablations}
 \label{sec:ablation_100m}
@@ -304,7 +332,7 @@ The result shows that a fixed token ID can select a useful residual parameter su
 
 The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, but its matched dense control is ahead at 1B tokens while the promoted router completes without dead experts. These panels use one seed, another tokenizer/shard, and different hardware from the historical panel. They therefore compare learned routing with dense computation on one setup without establishing that learned or fixed routing is generally superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
 
-The 300M comparison uses one seed per architecture. Its evaluation stream comes from the training split, and standardized downstream or out-of-distribution evaluations are not available for the reported checkpoints. The routed implementation is slower than dense at matched batch. Finally, the stored lookup buffers realize the modulo-primary/cardinality-balanced-secondary rule, not frequency-aware assignment. These limits leave the central observation intact but constrain it to matched-token loss for this run pair.
+The 300M comparison uses one seed per architecture, and its fixed loss-evaluation stream comes from the training split. The standard zero-shot panel is limited to three relatively simple multiple-choice tasks and WikiText-2; its accuracy gaps are smaller than one reported standard error and it does not replace broader out-of-distribution evaluation or multi-seed replication. The routed implementation is slower than dense at matched batch. Finally, the stored lookup buffers realize the modulo-primary/cardinality-balanced-secondary rule, not frequency-aware assignment. These limits leave the central observation intact but constrain its scope.
 
 %=============================================================================
 \section{Conclusion}
