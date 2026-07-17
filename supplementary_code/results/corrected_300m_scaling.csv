@@ -20,7 +20,7 @@ Residual Token-Routed,306.5,4000,4194,3.073789,21.62,3.055961,21.24,shared3840 r
 Dense SwiGLU,306.5,6000,6291,3.006092,20.21,2.979795,19.68,8xB300 batch64 seq2048 iso-batch
 Residual Token-Routed,306.5,6000,6291,2.990648,19.90,2.963490,19.37,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.015444
 Dense SwiGLU,306.5,7500,7864,2.891171,18.01,2.948246,19.07,8xB300 batch64 seq2048 iso-batch final_eval
-Residual Token-Routed,306.5,7500,7864,2.876718,17.76,2.932897,18.78,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.014453 final_eval
+Residual Token-Routed,306.5,7500,7864,2.876718,17.76,2.932897,18.78,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.015349 final_eval
 Dense SwiGLU,306.5,7620,7990,2.932437,18.77,,,8xB300 batch64 seq2048 iso-batch final_logged_step
 Residual Token-Routed,306.5,7620,7990,2.923100,18.60,,,shared3840 routed256 topk2 gates=1.0/0.1 mu_guidance=false gap=-0.009337 final_logged_step
 Dense SwiGLU,306.5,last50,,2.944597,,,,smoothed_mean_final_50_logged_steps

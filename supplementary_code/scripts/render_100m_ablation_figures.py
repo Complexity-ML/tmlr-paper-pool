@@ -6,13 +6,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 RUNS = [
-    ("100m_zipf_shared_metrics.csv", "Modulo-primary / balanced-secondary + shared"),
+    ("100m_modulo_balanced_secondary_shared_metrics.csv", "Modulo-primary / balanced-secondary + shared"),
     ("100m_dense_residual_metrics.csv", "Dense residual"),
     ("100m_modulo_shared_metrics.csv", "Modulo-adjacent top-2 + shared"),
     ("100m_round_robin_shared_metrics.csv", "Round-robin top-2 + shared"),
     ("100m_random_shared_metrics.csv", "Random top-2 + shared"),
     ("100m_shared_only_metrics.csv", "Shared-only"),
-    ("100m_zipf_no_shared_metrics.csv", "Modulo-primary / balanced-secondary, no shared"),
+    ("100m_modulo_balanced_secondary_no_shared_metrics.csv", "Modulo-primary / balanced-secondary, no shared"),
 ]
 
 

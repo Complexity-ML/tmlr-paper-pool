@@ -9,6 +9,7 @@
 \usepackage{url}
 \usepackage{booktabs}
 \usepackage{placeins}
+\usepackage{float}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
@@ -27,7 +28,7 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remarque}
 
-\title{COMPLEXITY-DEEP : Routage lexical r\'{e}siduel d\'{e}terministe pour les MLP de mod\`{e}les de langage}
+\title{L'identit\'{e} du token comme signal de routage pour des experts MLP r\'{e}siduels}
 
 \author{\name Auteurs anonymes \\
       \addr Article en cours de r\'{e}vision en double aveugle}
@@ -45,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-Nous pr\'{e}sentons COMPLEXITY-DEEP, un mod\`{e}le decoder-only qui ajoute \`{a} un tronc MLP dense partag\'{e} une petite branche lexicale r\'{e}siduelle d\'{e}terministe. Une assignation primaire modulo permut\'{e}e et une assignation secondaire d\'{e}terministe \'{e}quilibr\'{e}e s\'{e}lectionnent deux experts par token. Dans une comparaison appari\'{e}e \`{a} graine unique, environ 300M param\`{e}tres et 8B tokens FineWeb-Edu, le dernier checkpoint d'\'{e}valuation commun (step 7 500) atteint 2,932897 contre 2,948246 pour dense sur un flux fixe issu du split d'entra\^{i}nement. Au step 7 620, les pertes train sont 2,923100 et 2,932437 ; la moyenne des 50 derniers steps uniques est 2,928258 contre 2,944597. L'affirmation est volontairement limit\'{e}e : cette paire de runs montre un gain \`{a} budget de tokens \'{e}gal, sans \'{e}tablir un avantage wall-clock, un r\'{e}sultat held-out ind\'{e}pendant ou un routage sensible aux fr\'{e}quences.
+Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par une table fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL sur le flux d'\'{e}valuation de 2,9329 contre 2,9482 pour la baseline dense au dernier checkpoint d'\'{e}valuation commun. Ce flux provient du split d'entra\^{i}nement et l'impl\'{e}mentation rout\'{e}e est plus lente. Un diagnostic s\'{e}par\'{e} \`{a} 99,6M tokens place un routeur contextuel top-2 avec \'{e}quilibrage auxiliaire l\'{e}g\`{e}rement devant des contr\^{o}les dense et lexical appari\'{e}s. Le routeur s\'{e}lectionn\'{e} a ensuite \'{e}t\'{e} entra\^{i}n\'{e} sur 1,0003B tokens et atteint une NLL de 4,8580 sur son flux d'\'{e}valuation o200k s\'{e}par\'{e} ; sans contr\^{o}les full-budget appari\'{e}s, ce run de promotion ne constitue pas un classement face aux ablations historiques. Une \'{e}valuation held-out standardis\'{e}e et la r\'{e}plication multi-seed restent ouvertes.
 \end{abstract}
 
 %=============================================================================
@@ -53,42 +54,24 @@ Nous pr\'{e}sentons COMPLEXITY-DEEP, un mod\`{e}le decoder-only qui ajoute \`{a}
 \label{sec:introduction}
 %=============================================================================
 
-Les grands mod\`{e}les de langage (LLM) ont r\'{e}volutionn\'{e} le traitement du langage naturel ces derni\`{e}res ann\'{e}es \citep{vaswani2017attention, brown2020language}. Cependant, les architectures dominantes pr\'{e}sentent plusieurs limitations :
+Les mod\`{e}les Mixture-of-Experts apprennent g\'{e}n\'{e}ralement un routeur \`{a} partir de l'\'{e}tat cach\'{e} contextuel de chaque token \citep{shazeer2017outrageously,fedus2022switch,jiang2024mixtral}. Ce routeur adapte la s\'{e}lection au contexte, mais ajoute aussi des param\`{e}tres, des objectifs d'\'{e}quilibrage et des d\'{e}cisions de dispatch. Un routage fixe fournit un contrepoint utile : si un signal simple au niveau du token alloue correctement les param\`{e}tres, certains gains attribu\'{e}s au routage contextuel peuvent provenir d'une capacit\'{e} conditionnelle stable.
 
-\begin{itemize}
-    \item \textbf{Co\^{u}t computationnel des MoE} : les architectures Mixture of Experts \citep{shazeer2017outrageously, fedus2022switch} n\'{e}cessitent des m\'{e}canismes complexes d'\'{e}quilibrage de charge et de routage.
-    \item \textbf{Instabilit\'{e} de l'entra\^{i}nement} : les grands mod\`{e}les souffrent souvent d'instabilit\'{e}s num\'{e}riques n\'{e}cessitant un r\'{e}glage minutieux des hyperparaml\`{e}tres.
-\end{itemize}
+Nous testons cette id\'{e}e avec une architecture volontairement asym\'{e}trique. Chaque token traverse un MLP SwiGLU dense partag\'{e}. Son identit\'{e} s\'{e}lectionne deux experts suppl\'{e}mentaires, beaucoup plus \'{e}troits, dont la sortie est ajout\'{e}e comme r\'{e}siduel avec un gate appris. La s\'{e}lection ne d\'{e}pend pas du contexte, mais le calcul des experts en d\'{e}pend : les deux branches re\c{c}oivent l'\'{e}tat cach\'{e} produit par le transformer. L'exp\'{e}rience demande donc si l'identit\'{e} du token s\'{e}lectionne utilement un sous-espace de param\`{e}tres r\'{e}siduels, et non si un lookup lexical peut remplacer le calcul contextuel.
 
-Nous proposons COMPLEXITY-DEEP, une famille d'architectures centr\'{e}e sur le routage lexical d\'{e}terministe :
+La comparaison principale utilise deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s avec le m\^{e}me budget de 8B tokens. Ils partagent leur backbone et leur largeur MLP stock\'{e}e : l'un utilise une largeur dense de 4 096, l'autre une largeur partag\'{e}e de 3 840 et quatre experts de largeur 64, dont deux actifs par token. Au dernier point du flux d'\'{e}valuation fixe, le mod\`{e}le rout\'{e} atteint 2,9329 contre 2,9482. Il s'entra\^{i}ne plus lentement dans l'impl\'{e}mentation actuelle, et le flux d'\'{e}valuation provient du split train FineWeb-Edu.
 
-\begin{enumerate}
-    \item \textbf{Routage lexical fixe} : les IDs de tokens sont mapp\'{e}s vers des paires d'experts par des permutations d\'{e}terministes de partitions modulo.
-    \item \textbf{MLP r\'{e}siduel shared-plus-routed} : un grand MLP dense traite tous les tokens et de petits experts rout\'{e}s ajoutent une capacit\'{e} conditionn\'{e}e par l'identit\'{e} lexicale.
-\end{enumerate}
-
-La branche rout\'{e}e doit \^{e}tre vue comme un chemin lexical r\'{e}siduel au-dessus d'un MLP dense partag\'{e}, et non comme un remplacement du calcul dense. Les r\'{e}sultats concernent l'architecture combin\'{e}e et ne suffisent pas \`{a} \'{e}tablir une sp\'{e}cialisation s\'{e}mantique des experts.
+Cette \'{e}tude apporte une observation contr\^{o}l\'{e}e, pas un verdict g\'{e}n\'{e}ral sur le routage d'experts. Elle d\'{e}finit une architecture shared-plus-residual o\`{u} l'identit\'{e} du token contr\^{o}le uniquement la s\'{e}lection, v\'{e}rifie les tables r\'{e}alis\'{e}es et le comptage de capacit\'{e}, puis rapporte la trajectoire compl\`{e}te \`{a} tokens appari\'{e}s. Nous rapportons aussi un diagnostic court s\'{e}par\'{e} avec des routeurs contextuels appris et des contr\^{o}les dense et lexical appari\'{e}s. Il s'agit d'un test de promotion, pas d'un remplacement de la comparaison \`{a} 1B tokens.
 
 %=============================================================================
 \section{Travaux connexes}
 \label{sec:related_work}
 %=============================================================================
 
-\subsection{Architectures Transformer}
+Les routeurs MoE appris utilisent les \'{e}tats cach\'{e}s pour s\'{e}lectionner les experts et ajoutent souvent un objectif auxiliaire ou un autre m\'{e}canisme d'\'{e}quilibrage \citep{shazeer2017outrageously,fedus2022switch,jiang2024mixtral}. Ces syst\`{e}mes testent la valeur d'une sp\'{e}cialisation adapt\'{e}e au contenu. Notre exp\'{e}rience teste un autre axe : une identit\'{e} de token stable est-elle d\'{e}j\`{a} informative lorsque le routage ne contr\^{o}le qu'une branche r\'{e}siduelle \'{e}troite ?
 
-L'architecture Transformer \citep{vaswani2017attention} est devenue le standard pour les mod\`{e}les de langage. Les d\'{e}veloppements r\'{e}cents incluent les optimisations de l'attention comme Flash Attention \citep{dao2022flashattention}, Grouped Query Attention (GQA) \citep{ainslie2023gqa} et Rotary Position Embeddings (RoPE) \citep{su2021roformer}.
+Hash Layers est le pr\'{e}c\'{e}dent le plus proche \citep{roller2021hash}. Ce travail montre que des hash fixes de caract\'{e}ristiques locales des tokens peuvent concurrencer un routage appris. Notre architecture maintient un MLP dense actif pour chaque token et applique le lookup top-2 fixe \`{a} une petite capacit\'{e} r\'{e}siduelle. Le chemin rout\'{e} corrige ainsi un calcul commun plut\^{o}t que de constituer la transformation feed-forward principale.
 
-\subsection{Mixture of Experts}
-
-Les architectures MoE \citep{shazeer2017outrageously} permettent d'augmenter la capacit\'{e} sans accro\^{i}tre proportionnellement le calcul. Switch Transformer \citep{fedus2022switch} et Mixtral \citep{jiang2024mixtral} ont d\'{e}montr\'{e} l'efficacit\'{e} de cette approche, au prix d'une complexit\'{e} accrue (\'{e}quilibrage de charge, communication inter-GPU).
-
-\subsection{Routage lexical fixe et experts partag\'{e}s}
-
-Le pr\'{e}c\'{e}dent le plus proche du routage par identit\'{e} de token est Hash Layers \citep{roller2021hash}, qui s\'{e}lectionne des param\`{e}tres feed-forward par hash fixe, sans param\`{e}tres de routeur ni perte auxiliaire d'\'{e}quilibrage. COMPLEXITY-DEEP conserve au contraire un grand chemin dense pour chaque token et n'utilise le lookup fixe que pour une branche r\'{e}siduelle top-2 \'{e}troite. DeepSeekMoE utilise \'{e}galement des experts partag\'{e}s pour capturer des connaissances communes et limiter la redondance entre experts rout\'{e}s \citep{dai2024deepseekmoe}. Une analyse statistique r\'{e}cente obtient, sous des hypoth\`{e}ses explicites d'estimation, des r\'{e}sultats conditionnels d'efficacit\'{e} en \'{e}chantillons pour les shared experts \citep{nguyen2025sharedexperts}. Ces garanties ne s'appliquent pas directement \`{a} notre lookup lexical fixe ; elles motivent la d\'{e}composition shared-plus-routed mais ne constituent pas un th\'{e}or\`{e}me sur le checkpoint \'{e}valu\'{e}.
-
-\subsection{Normalisation et stabilit\'{e}}
-
-RMSNorm \citep{zhang2019root} et QK-Normalization \citep{dehghani2023scaling} sont des techniques modernes pour stabiliser l'entra\^{i}nement des grands mod\`{e}les.
+Des experts partag\'{e}s apparaissent aussi dans DeepSeekMoE \citep{dai2024deepseekmoe}, o\`{u} ils capturent le calcul commun \`{a} tous les tokens. Des analyses statistiques des m\'{e}langes \`{a} experts partag\'{e}s fournissent des r\'{e}sultats sous des hypoth\`{e}ses d'estimation explicites \citep{nguyen2025sharedexperts}. Nous utilisons cette d\'{e}composition comme prior architectural ; nos mesures ne testent pas ces garanties th\'{e}oriques.
 
 %=============================================================================
 \section{Architecture COMPLEXITY-DEEP}
@@ -97,170 +80,70 @@ RMSNorm \citep{zhang2019root} et QK-Normalization \citep{dehghani2023scaling} so
 
 \subsection{Vue d'ensemble}
 
-COMPLEXITY-DEEP est une architecture de type d\'{e}codeur uniquement compos\'{e}e de $L$ couches identiques. Chaque couche comprend :
-\begin{enumerate}
-    \item Un bloc d'attention multi-t\^{e}tes
-    \item Un bloc MLP avec routage par token
-    \item Connexions r\'{e}siduelles avec pr\'{e}-normalisation (RMSNorm)
-\end{enumerate}
+L'architecture ne modifie que la sous-couche feed-forward d'un transformer decoder-only. L'attention reste une GQA standard \`{a} 16 t\^{e}tes de requ\^{e}te et quatre t\^{e}tes cl\'{e}/valeur, avec QK-Norm, RoPE et attention causale SDPA. La Figure~\ref{fig:architecture} isole le calcul modifi\'{e}. Pour l'ID $t$ et l'\'{e}tat cach\'{e} contextuel $\mathbf{x}$, l'ID s\'{e}lectionne les param\`{e}tres r\'{e}siduels tandis que les deux branches transforment $\mathbf{x}$.
 
-La dimension cach\'{e}e est $d_{model}$, avec $n_h$ t\^{e}tes d'attention et $n_{kv}$ t\^{e}tes cl\'{e}/valeur (GQA). La Figure~\ref{fig:architecture} donne un sch\'{e}ma simplifi\'{e} du design Token-Routed r\'{e}siduel 300M utilis\'{e} dans la comparaison de scaling corrig\'{e}e.
-
-\begin{figure}[p]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.68\textwidth,height=0.78\textheight,keepaspectratio]{architecture_complexity_deep.png}
-\caption{Sch\'{e}ma simplifi\'{e} de l'architecture COMPLEXITY-DEEP 300M. Chaque couche comprend une attention GQA, une grande branche MLP dense partag\'{e}e et une petite branche lexicale r\'{e}siduelle rout\'{e}e de mani\`{e}re d\'{e}terministe.}
+\includegraphics[width=\textwidth]{architecture_complexity_deep.png}
+\caption{L'identit\'{e} du token contr\^{o}le uniquement le lookup top-2 fixe. La branche partag\'{e}e et les experts r\'{e}siduels s\'{e}lectionn\'{e}s re\c{c}oivent le m\^{e}me \'{e}tat cach\'{e} contextuel.}
 \label{fig:architecture}
 \end{figure}
-\FloatBarrier
 
-\subsection{Token-Routed MLP}
+\subsection{Routage fixe par identit\'{e} de token}
 \label{sec:token_routed_mlp}
 
-Le mod\`{e}le \'{e}valu\'{e} utilise une table top-2 fixe d\'{e}pendant uniquement de l'identit\'{e} du token. Pour la couche $l$, l'expert primaire est obtenu par une permutation $\pi_l$ du r\'{e}sidu de l'ID :
+Chaque couche stocke une table top-2 fixe. L'expert primaire est obtenu par une permutation seed\'{e}e $\pi_l$ du r\'{e}sidu de l'ID :
 \begin{equation}
 r_{l,1}(t)=\pi_l(t \bmod E), \qquad E=4.
 \label{eq:routing}
 \end{equation}
-Chaque couche assigne ainsi exactement 8 000 des 32 000 IDs \`{a} chaque expert primaire. La table secondaire est construite une fois, par ordre croissant d'ID, en choisissant l'expert distinct du primaire actuellement le moins utilis\'{e} :
+La table secondaire est construite une fois, par ordre croissant d'ID, en choisissant l'expert le moins utilis\'{e} parmi ceux distincts du primaire :
 \begin{equation}
 r_{l,2}(t)=\operatorname*{arg\,min}_{e\neq r_{l,1}(t)}
 \sum_{u=0}^{t-1}\mathbb{1}[r_{l,2}(u)=e],
 \label{eq:secondary_routing}
 \end{equation}
-avec d\'{e}partage d\'{e}terministe par l'indice le plus faible. Il s'agit de la r\`{e}gle \emph{modulo-primaire/secondaire \'{e}quilibr\'{e}} observ\'{e}e dans les checkpoints. Les deux sorties top-2 re\c{c}oivent un poids fixe de 0,5 :
+avec d\'{e}partage par l'indice le plus faible. Comme le vocabulaire de 32 000 tokens est divisible par quatre, chaque expert re\c{c}oit exactement 8 000 IDs primaires. Cela \'{e}quilibre la cardinalit\'{e} du vocabulaire, pas le trafic corpus.
+
+\subsection{MLP partag\'{e} et experts r\'{e}siduels}
+
+Pour l'\'{e}tat cach\'{e} contextuel $\mathbf{x}$ et l'ID $t$, la sortie feed-forward est
 \begin{equation}
 \operatorname{MLP}_l(\mathbf{x},t)=g^s_l\operatorname{Shared}_l(\mathbf{x})+g^r_l\!\sum_{j=1}^{2}0.5\,\operatorname{Expert}_{r_{l,j}(t)}(\mathbf{x}),
 \label{eq:mlp_routed}
 \end{equation}
-o\`{u} les gates scalaires apprises $g^s_l$ et $g^r_l$ sont initialis\'{e}es respectivement \`{a} 1,0 et 0,1. Elles sont distinctes des poids fixes 0,5/0,5 combinant les deux experts.
-
-Chaque expert est un MLP standard avec activation SiLU (SwiGLU) :
+o\`{u} les gates scalaires appris $g^s_l$ et $g^r_l$ sont initialis\'{e}s \`{a} 1,0 et 0,1. Les sorties expertes s\'{e}lectionn\'{e}es utilisent des poids fixes 0,5/0,5. Chaque branche est une transformation SwiGLU,
 \begin{equation}
 \text{Expert}_i(\mathbf{x}) = (\text{SiLU}(\mathbf{x}\mathbf{W}^i_{gate}) \odot \mathbf{x}\mathbf{W}^i_{up})\mathbf{W}^i_{down}
 \label{eq:expert}
 \end{equation}
 
-\paragraph{Ce que conditionne le routage lexical.} Le routage fixe ne regroupe pas les \'{e}tats cach\'{e}s par sens. Il assigne chaque identit\'{e} de token \`{a} deux fonctions expertes, qui re\c{c}oivent cependant des \'{e}tats contextuels produits par les couches d'attention pr\'{e}c\'{e}dentes. La perte de langage est calcul\'{e}e apr\`{e}s le r\'{e}seau r\'{e}siduel complet et la t\^{e}te de sortie ; il n'existe pas d'objectif supervis\'{e} ind\'{e}pendant par expert. Des assignations lexicales diff\'{e}rentes peuvent induire des distributions d'entra\^{i}nement diff\'{e}rentes, mais elles n'impliquent ni gradients ind\'{e}pendants, ni poids orthogonaux, ni sp\'{e}cialisation s\'{e}mantique.
+et la branche partag\'{e}e a la m\^{e}me forme avec ses propres param\`{e}tres. L'identit\'{e} s\'{e}lectionne des fonctions, mais ces fonctions op\`{e}rent sur des \'{e}tats contextuels. L'objectif de langage est appliqu\'{e} apr\`{e}s le r\'{e}seau complet ; il n'existe pas d'objectif ind\'{e}pendant par expert.
 
-\textbf{Avantages op\'{e}rationnels :}
-\begin{itemize}
-    \item Pas de perte auxiliaire d'\'{e}quilibrage de charge
-    \item Lookup statique sans r\'{e}seau appris de s\'{e}lection des experts
-\end{itemize}
+\subsection{Capacit\'{e} et dispatch sparse}
 
-\subsection{Architecture finale}
-\label{sec:architecture_v2}
-
-L'architecture \'{e}valu\'{e}e combine un dispatch sparse, une grande branche dense partag\'{e}e et une petite branche r\'{e}siduelle top-2.
-
-\subsubsection{Dispatch sparse de la branche rout\'{e}e}
-\label{sec:sparse_dispatch}
-
-L'impl\'{e}mentation n'\'{e}value chaque expert rout\'{e} que sur les tokens qui lui sont assign\'{e}s :
-\begin{equation}
-\text{out}[\text{mask}_e] = \text{Expert}_e(\mathbf{x}[\text{mask}_e]) \quad \text{pour } e = 0, \ldots, E-1
-\end{equation}
-Cela \'{e}vite d'ex\'{e}cuter tous les experts rout\'{e}s sur tous les tokens, sans rendre le mod\`{e}le complet shared-plus-top-2 \'{e}quivalent \`{a} $1\times$ dense en temps r\'{e}el.
-
-\subsubsection{MLP dense partag\'{e}}
-\label{sec:shared_expert}
-
-Un MLP dense partag\'{e} traite \textit{tous} les tokens. Deux experts \'{e}troits fournissent en parall\`{e}le une correction lexicale r\'{e}siduelle ; nous ne pr\'{e}tendons pas que ces experts acqui\`{e}rent une sp\'{e}cialisation s\'{e}mantique. La sortie combine les deux branches :
-\begin{equation}
-\text{MLP}_{\text{output}}(\mathbf{x},t) = g_s\text{SwiGLU}_{\text{shared}}(\mathbf{x}) + g_r\sum_{j=1}^{2}0.5\,\text{SwiGLU}_{r_j(t)}(\mathbf{x})
-\end{equation}
-o\`{u} chaque composant est un MLP SwiGLU standard :
-\begin{align}
-\text{SwiGLU}_{\text{shared}}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^s_{gate}) \odot \mathbf{x}\mathbf{W}^s_{up})\mathbf{W}^s_{down} \\
-\text{SwiGLU}_{e}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^e_{gate}) \odot \mathbf{x}\mathbf{W}^e_{up})\mathbf{W}^e_{down}
-\end{align}
-Dans le checkpoint 300M, la largeur interm\'{e}diaire partag\'{e}e est 3 840 ; chacun des quatre experts rout\'{e}s a une largeur 64 et deux sont actifs par token. La branche rout\'{e}e est donc une petite correction du tronc dense.
-
-\subsubsection{Assignation du vocabulaire}
-
-Les tables sauvegard\'{e}es confirment un routage modulo permut\'{e} propre \`{a} chaque couche. Chaque expert primaire re\c{c}oit exactement 8 000 des 32 000 IDs. Il s'agit d'un \'{e}quilibre de cardinalit\'{e}, pas d'un \'{e}quilibre de fr\'{e}quence corpus.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{expert_balance.png}
-\caption{Assignation du vocabulaire extraite du checkpoint 300M : exactement 8 000 IDs sur 32 000 par expert primaire via une permutation modulo propre \`{a} chaque couche. La figure ne repr\'{e}sente pas le trafic corpus.}
-\label{fig:expert_balance}
-\end{figure}
-\FloatBarrier
-
-
-
-%=============================================================================
-\section{Analyse th\'{e}orique}
-\label{sec:theory}
-%=============================================================================
-
-Nous \'{e}non\c{c}ons uniquement des propri\'{e}t\'{e}s directement applicables \`{a} l'architecture shared-plus-top-2 \'{e}valu\'{e}e.
-
-\subsection{\'{E}quilibre des assignations primaires}
-
-\begin{proposition}[\'{E}quilibre des assignations primaires]
-\label{thm:perfect_balance}
-Soient les IDs de tokens $\{0,\ldots,|V|-1\}$ et $E$ experts. Sous $r_{l,1}(t)=\pi_l(t\bmod E)$, chaque expert re\c{c}oit soit $\lfloor |V|/E\rfloor$, soit $\lceil |V|/E\rceil$ IDs primaires. Si $E\mid |V|$, chacun en re\c{c}oit exactement $|V|/E$.
-\end{proposition}
-
-\begin{proof}
-Avant permutation, la classe de r\'{e}sidu $e$ contient les IDs $e,e+E,e+2E,\ldots$ inf\'{e}rieurs \`{a} $|V|$. Leurs cardinalit\'{e}s diff\`{e}rent d'au plus un. Comme $\pi_l$ est une bijection des labels d'experts, elle conserve ces cardinalit\'{e}s. Pour $|V|=32000$ et $E=4$, chaque couche assigne donc exactement 8 000 IDs primaires \`{a} chaque expert.
-\end{proof}
-
-Il s'agit d'un \'{e}quilibre de cardinalit\'{e} du vocabulaire, et non d'un \'{e}quilibre du trafic corpus. Des fr\'{e}quences non uniformes peuvent produire un trafic r\'{e}alis\'{e} in\'{e}gal.
-
-\subsection{Capacit\'{e} appari\'{e}e et largeur MLP active}
-
-Soient $d$ la dimension du mod\`{e}le, $d_s$ la largeur du SwiGLU partag\'{e}, $d_e$ la largeur de chaque expert rout\'{e}, $E$ le nombre d'experts stock\'{e}s et $k$ le nombre s\'{e}lectionn\'{e} par token. En ignorant les biais, le nombre de param\`{e}tres MLP par couche est
+Soient $d$ la dimension du mod\`{e}le, $d_s$ la largeur partag\'{e}e, $d_e$ la largeur de chaque expert, $E$ le nombre d'experts stock\'{e}s et $k$ le nombre s\'{e}lectionn\'{e} par token. En ignorant les biais, le MLP rout\'{e} stocke
 \begin{equation}
 P_{\mathrm{TR}}=3d(d_s+E d_e),
 \end{equation}
-et la largeur \'{e}valu\'{e}e pour chaque token est
+param\`{e}tres par couche et \'{e}value la largeur interm\'{e}diaire
 \begin{equation}
 d_{\mathrm{active}}=d_s+k d_e.
 \end{equation}
-Pour le mod\`{e}le \'{e}valu\'{e}, $(d_s,E,d_e,k)=(3840,4,64,2)$. La largeur MLP stock\'{e}e vaut donc $3840+4\times64=4096$, exactement comme la baseline dense, tandis que chaque token traverse une largeur $3840+2\times64=3968$. Ce comptage ne garantit aucun gain wall-clock : le dispatch et les petits kernels experts ajoutent un overhead mesur\'{e} empiriquement.
-
-\subsection{Port\'{e}e de l'interpr\'{e}tation}
-
-Le lookup d\'{e}terministe supprime le r\'{e}seau appris de s\'{e}lection et les pertes auxiliaires d'\'{e}quilibrage, mais renonce aussi au routage adaptatif au contenu. Les mesures rapport\'{e}es n'\'{e}tablissent pas de sp\'{e}cialisation s\'{e}mantique ou fonctionnelle. L'\'{e}vidence concerne la loss de langage de bout en bout, la structure des tables et le trafic observ\'{e}.
+par token. Pour le mod\`{e}le \'{e}valu\'{e}, $(d_s,E,d_e,k)=(3840,4,64,2)$ : la largeur stock\'{e}e est 4 096, comme la baseline dense, et la largeur active est 3 968. L'impl\'{e}mentation groupe les tokens selon leurs assignations et n'\'{e}value que les experts s\'{e}lectionn\'{e}s. Les petits kernels et le dispatch ajoutent malgr\'{e} tout un surco\^{u}t mesur\'{e} en Section~\ref{sec:scaling_300m}.
 
 
-\section{Impl\'{e}mentation}
-\label{sec:implementation}
+\section{Protocole exp\'{e}rimental}
+\label{sec:experiments}
 %=============================================================================
 
-\subsection{Sp\'{e}cifications techniques}
-
-Notre impl\'{e}mentation utilise PyTorch 2.0+ avec les optimisations suivantes :
-
 \begin{table}[h]
 \centering
-\caption{Choix d'impl\'{e}mentation}
-\label{tab:implementation}
-\begin{tabular}{ll}
-\toprule
-\textbf{Composant} & \textbf{Choix technique} \\
-\midrule
-Attention & SDPA / Flash Attention \\
-Encodage positionnel & RoPE ($\theta = 10000$) \\
-Normalisation & RMSNorm + QK-Norm \\
-Activation & SiLU (SwiGLU) \\
-Pr\'{e}cision & BF16 (entra\^{i}nement et inf\'{e}rence) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-\begin{table}[h]
-\centering
-\caption{Configurations COMPLEXITY-DEEP 300M (comparaison iso-param\`{e}tres)}
+\caption{Configurations appari\'{e}es des mod\`{e}les 300M.}
 \label{tab:config_300m}
 \begin{tabular}{lll}
 \toprule
-\textbf{Param\`{e}tre} & \textbf{Token-Routed (MoE)} & \textbf{Baseline dense} \\
+\textbf{Param\`{e}tre} & \textbf{R\'{e}siduel token-identity} & \textbf{Baseline dense} \\
 \midrule
 Couches ($L$) & 18 & 18 \\
 Dimension ($d_{model}$) & 1024 & 1024 \\
@@ -280,132 +163,80 @@ Chemin MLP actif/token & shared + 2 experts rout\'{e}s & SwiGLU dense \\
 \end{tabular}
 \end{table}
 
-\subsection{Configuration du mod\`{e}le 300M}
+\subsection{Comparaison principale}
 \label{sec:config_300m}
 
-Pour la comparaison iso-param\`{e}tres corrig\'{e}e au scale (Section~\ref{sec:scaling_300m}), nous entra\^{i}nons deux architectures \`{a} $\sim$300M param\`{e}tres (Table~\ref{tab:config_300m}) : un mod\`{e}le Token-Routed r\'{e}siduel (306,5M, 4 experts, top-$k=2$, grand shared expert et petite branche rout\'{e}e) et une baseline dense SwiGLU (306,5M, $d_{ff} = 4096$). Les deux partagent le m\^{e}me backbone (18 couches, $d_{model}=1024$, GQA 16/4, RMSNorm, QK-Norm), tokenizer, longueur de s\'{e}quence, optimiseur, warmup et budget FineWeb-Edu.
+Nous entra\^{i}nons un mod\`{e}le \`{a} r\'{e}siduel token-identity et une baseline dense, tous deux de 306,5M param\`{e}tres. Ils utilisent le m\^{e}me backbone \`{a} 18 couches, le m\^{e}me tokenizer, un contexte de 2 048 tokens, le m\^{e}me flux FineWeb-Edu, le m\^{e}me optimiseur, le m\^{e}me scheduler, la pr\'{e}cision BF16 et un budget de 8B tokens. Le batch global est de 1 048 576 tokens (huit GPUs, batch 64 par GPU) : un m\^{e}me nombre de steps implique donc un m\^{e}me nombre de tokens vus. La diff\'{e}rence contr\^{o}l\'{e}e est la param\'{e}trisation MLP de la Table~\ref{tab:config_300m}.
 
-%=============================================================================
-\section{Exp\'{e}riences}
-\label{sec:experiments}
-%=============================================================================
-
-\subsection{\'{E}tude pilote}
-\label{sec:pilot_study}
-
-Des runs pilotes ant\'{e}rieurs ont motiv\'{e} le retrait du contr\^{o}leur r\'{e}siduel adaptatif et le maintien d'un chemin dense partag\'{e}. Les preuves de cet article sont centr\'{e}es sur la comparaison iso-param\`{e}tres 300M corrig\'{e}e ; les runs pilotes ne soutiennent pas le claim principal.
-
-\subsection{Recette d'entra\^{i}nement}
+\subsection{Optimisation}
 \label{sec:training_recipe}
 
-Notre recette d'entra\^{i}nement suit les pratiques standard des LLMs modernes (LLaMA, GPT-3) avec deux ajustements automatiques :
-
-\paragraph{Warmup dynamique.} Au lieu d'un nombre fixe d'\'{e}tapes de warmup (qui peut repr\'{e}senter 52\% du training pour des runs courts), le warmup est automatiquement fix\'{e} \`{a} \textbf{5\% du nombre total d'\'{e}tapes}. Cela garantit un ratio warmup/training constant ind\'{e}pendamment de la dur\'{e}e du run.
-
-\paragraph{Initialisation GPT-style.} Les projections de sortie r\'{e}siduelles (\texttt{o\_proj}, \texttt{down\_proj}) sont initialis\'{e}es avec un \'{e}cart-type r\'{e}duit :
+Les deux mod\`{e}les utilisent AdamW avec $(\beta_1,\beta_2)=(0,9,0,95)$, un weight decay de $0,1$, un gradient clipping \`{a} $1,0$, un warmup de 5\% et une d\'{e}croissance cosinus jusqu'\`{a} 10\% du peak learning rate. Les projections de sortie r\'{e}siduelles utilisent
 \begin{equation}
 \sigma_{\text{residual}} = \frac{0.02}{\sqrt{2 \times L}}
 \end{equation}
-o\`{u} $L$ est le nombre de couches. Cela emp\^{e}che le flux r\'{e}siduel de cro\^{i}tre avec la profondeur~\citep{radford2019language}.
+pour $L$ couches \citep{radford2019language}.
 
-\paragraph{Autres hyperparaml\`{e}tres.} Weight decay = 0.1 (standard GPT-3/LLaMA), AdamW avec $\beta_1 = 0.9$, $\beta_2 = 0.95$, gradient clipping $= 1.0$, pr\'{e}cision BF16, scheduler cosine avec min\_lr = 10\% du peak.
-
-\subsection{V\'{e}rification des tables de routage}
+\subsection{Protocole de routage et d'\'{e}valuation}
 \label{sec:routing_verification}
 
-Nous avons inspect\'{e} le checkpoint final plut\^{o}t que d'inf\'{e}rer le routage depuis les noms de runs. Pour chacune des 18 couches, la table primaire de 32 000 entr\'{e}es est exactement une permutation par couche de $t\bmod4$, soit 8 000 IDs primaires par expert. La table secondaire est distincte du primaire et suit la construction d\'{e}terministe \'{e}quilibr\'{e}e de l'\'{e}quation~\ref{eq:secondary_routing}. Le run ne contient aucune table de fr\'{e}quences ; il ne constitue donc pas une \'{e}valuation du bin-packing Zipf.
+L'inspection des checkpoints montre que les buffers de lookup primaire et secondaire des 18 couches correspondent exactement aux \'{e}quations~\ref{eq:routing}--\ref{eq:secondary_routing}. Nous identifions donc le m\'{e}canisme r\'{e}alis\'{e} directement depuis les assignations sauvegard\'{e}es : routage primaire modulo permut\'{e} et assignation secondaire \'{e}quilibr\'{e}e par cardinalit\'{e}, plut\^{o}t que depuis le nom historique du run. Le flux d'\'{e}valuation fixe provient du split train FineWeb-Edu ; il est identique entre les deux runs mais ne constitue pas un holdout ind\'{e}pendant.
 
 %=============================================================================
-\section{Discussion}
-\label{sec:discussion}
+\section{R\'{e}sultats}
+\label{sec:results}
 %=============================================================================
 
-\subsection{Comparaison avec les architectures existantes}
+\subsection{Comparaison de scaling (300M, 8B tokens)}
+\label{sec:scaling_300m}
 
-\begin{table}[h]
-\centering
-\caption{Comparaison architecturale}
-\label{tab:arch_comparison}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Architecture} & \textbf{Routage} & \textbf{Perte d'\'{e}quilibrage} \\
-\midrule
-Transformer & Non & N/A \\
-Switch Transformer & Souple & Requise \\
-Mixtral & Top-2 & Requise \\
-\textbf{COMPLEXITY-DEEP} & \textbf{Lexical dur} & \textbf{Non utilis\'{e}e} \\
-\bottomrule
-\end{tabular}
-\end{table}
+Le mod\`{e}le \`{a} r\'{e}siduel token-identity commence derri\`{e}re la baseline dense et la croise apr\`{e}s environ 0,8B tokens (Figure~\ref{fig:300m_loss_curves}). Au dernier checkpoint d'\'{e}valuation commun, step 7 500 ou 7,864B tokens, sa NLL sur le flux d'\'{e}valuation est de \textbf{2,9329} contre \textbf{2,9482} pour dense, soit un \'{e}cart de $-0,0153$. Au dernier point train appari\'{e}, step 7 620, la NLL d'entra\^{i}nement est de \textbf{2,9231} contre \textbf{2,9324}. La Table~\ref{tab:scaling_300m_result} identifie explicitement les deux m\'{e}triques.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.65\textwidth]{head_expert_heatmap.png}
-\caption{Heatmap diagnostique t\^{e}te d'attention $\times$ expert pour la couche m\'{e}diane. La figure est descriptive ; aucun couplage t\^{e}te--expert n'en est inf\'{e}r\'{e}.}
-\label{fig:head_expert_heatmap}
-\end{figure}
-\FloatBarrier
-
-\subsection{Analyse du routage par token}
-\label{sec:token_routing_analysis}
-
-Les diagnostics du run 300M mesurent le trafic r\'{e}alis\'{e} sans attribuer ce trafic \`{a} un m\'{e}canisme frequency-aware :
-
-\begin{itemize}
-    \item \textbf{Utilisation proche de l'\'{e}quilibre} : dans le run 300M, l'utilisation finale observ\'{e}e des experts est 0,2481/0,2635/0,2481/0,2403, sans expert mort.
-    \item \textbf{Normes \'{e}quilibr\'{e}es} : les normes des experts restent proches entre branches rout\'{e}es.
-    \item \textbf{Aucune branche morte} : les quatre experts re\c{c}oivent un trafic observ\'{e} non nul
-\end{itemize}
-
-Ces diagnostics excluent des branches rout\'{e}es mortes dans le run observ\'{e}, mais n'\'{e}tablissent aucune sp\'{e}cialisation s\'{e}mantique ou fonctionnelle.
-
-\begin{table}[h]
-\centering
-\caption{Token-Routed MLP vs MoE \`{a} routage souple}
-\label{tab:moe_comparison}
-\begin{tabular}{llll}
-\toprule
-\textbf{Crit\`{e}re} & \textbf{Token-Routed} & \textbf{MoE standard} & \textbf{Avantage} \\
-\midrule
-Table de s\'{e}lection & Lexicale fixe & Apprise, d\'{e}pendante du contenu & D\'{e}pend \\
-Claim de sp\'{e}cialisation & Non \'{e}tabli ici & Variable selon le mod\`{e}le & Aucun \\
-D\'{e}ploiement & Sans r\'{e}seau de gating & Gating + dispatch & Token-Routed \\
-D\'{e}terminisme du lookup & Oui & Possible \`{a} l'inf\'{e}rence & D\'{e}pend \\
-Branche partag\'{e}e & Oui & Optionnelle & D\'{e}pend \\
-Signal de s\'{e}lection & Identit\'{e} fixe du token & Contenu de l'\'{e}tat cach\'{e} & MoE standard \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Ablations exploratoires 100M (1B tokens)}
-\label{sec:ablation_100m_preview}
-
-Nous conservons la suite demand\'{e}e de sept runs comme diagnostic exploratoire. Chaque run utilise le m\^{e}me budget sur $2\times$B200 : 954 steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ longueur 2048 $=1{,}0003$B tokens. Le chemin FineWeb streaming n'a pas rempli la table de fr\'{e}quences attendue par la configuration auparavant nomm\'{e}e ``Zipf''. Cette condition a donc utilis\'{e} un routage primaire modulo avec une route secondaire d\'{e}terministe ; nous la renommons \emph{top-2 modulo-primaire/secondaire \'{e}quilibr\'{e}}. Les contr\^{o}les modulo et round-robin ont des assignations primaires \'{e}quivalentes dans ce cadre : leurs diff\'{e}rences single-run ne doivent pas \^{e}tre interpr\'{e}t\'{e}es causalement.
-
-Le run modulo-primaire/secondaire \'{e}quilibr\'{e} avec branche partag\'{e}e obtient les plus faibles pertes logg\'{e}es : 4,8205 en train au step 950 et 4,8887 en \'{e}valuation au step 750, contre 4,8244 et 4,8958 pour dense. Ces \'{e}carts sont faibles, \`{a} graine unique et comparables aux diff\'{e}rences entre contr\^{o}les nominalement \'{e}quivalents. La suite fournit uniquement une \'{e}vidence exploratoire ; elle n'\'{e}tablit aucun effet causal de strat\'{e}gie ni bin-packing sensible aux fr\'{e}quences.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_100m_b200_ablation_train_curves.png}
-\caption{Courbes train exploratoires 100M \`{a} budget appari\'{e}. La condition auparavant nomm\'{e}e ``Zipf shared'' est identifi\'{e}e par son lookup r\'{e}el : top-2 modulo-primaire/secondaire \'{e}quilibr\'{e}.}
-\label{fig:100m_b200_ablation_train_curves}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.78\textwidth]{fig_100m_b200_ablation_eval_ranking.png}
-\caption{Pertes d'\'{e}valuation exploratoires 100M. Toutes les variantes rout\'{e}es utilisent des tables top-2 fixes ; aucune n'utilise de routeur d'experts appris.}
-\label{fig:100m_b200_ablation_eval_ranking}
+\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
+\caption{Perte d'entra\^{i}nement \`{a} nombres de tokens appari\'{e}s. Le mod\`{e}le \`{a} r\'{e}siduel token-identity (rouge) commence derri\`{e}re la baseline dense (bleu), la croise apr\`{e}s environ 0,8B tokens et reste devant jusqu'\`{a} la fin.}
+\label{fig:300m_loss_curves}
 \end{figure}
 
 \begin{table}[!htbp]
 \centering
+\caption{NLL d'entra\^{i}nement et du flux d'\'{e}valuation aux m\^{e}mes nombres de tokens. La ligne d'\'{e}valuation utilise le flux fixe du split train FineWeb-Edu ; les autres lignes sont des mesures d'entra\^{i}nement.}
+\label{tab:scaling_300m_result}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{M\'{e}trique} & \textbf{Step} & \textbf{Tokens} & \textbf{Dense} & \textbf{TR ($k=2$)} & \textbf{\'{E}cart} \\
+\midrule
+Train & 100  & 105M   & 6,6698 & 6,8464          & $+0,177$ \\
+Train & 500  & 524M   & 4,4450 & 4,4796          & $+0,035$ \\
+Train & 1000 & 1,05B  & 3,5500 & \textbf{3,5324} & $\mathbf{-0,018}$ \\
+Train & 2000 & 2,10B  & 3,1953 & \textbf{3,1720} & $\mathbf{-0,023}$ \\
+Train & 4000 & 4,19B  & 3,0925 & \textbf{3,0738} & $\mathbf{-0,019}$ \\
+Train & 6000 & 6,29B  & 3,0061 & \textbf{2,9906} & $\mathbf{-0,015}$ \\
+Flux eval. & 7500 & 7,864B & 2,9482 & \textbf{2,9329} & $\mathbf{-0,0153}$ \\
+Train & 7620 & 7,99B  & 2,9324 & \textbf{2,9231} & $\mathbf{-0,009}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\paragraph{Trafic de routage.} L'utilisation finale des experts est 0,2481/0,2635/0,2481/0,2403, sans expert mort. Il s'agit d'une propri\'{e}t\'{e} observ\'{e}e du run, pas d'une cons\'{e}quence de l'\'{e}quilibre de cardinalit\'{e} du vocabulaire.
+
+\paragraph{Throughput d'entra\^{i}nement.} Sur le m\^{e}me syst\`{e}me $8\times$B300 et avec le m\^{e}me batch global, dense atteint environ 0,95M tokens/s et le mod\`{e}le \`{a} r\'{e}siduel token-identity environ 0,75M tokens/s. La comparaison de qualit\'{e} est appari\'{e}e par tokens, pas par temps mural.
+
+\subsection{Ablations 100M}
+\label{sec:ablation_100m}
+
+Le panneau A contient sept mod\`{e}les historiques d'environ 100M param\`{e}tres, chacun entra\^{i}n\'{e} sur 1,0003B tokens avec une graine unique sur la configuration $2\times$B200 consign\'{e}e. La suite s\'{e}pare la branche partag\'{e}e, la branche r\'{e}siduelle et plusieurs assignations top-2 fixes. La condition configur\'{e}e pour le routage frequency-aware ne contient aucune table de fr\'{e}quences remplie et r\'{e}alise donc un lookup modulo-primaire/secondaire \'{e}quilibr\'{e}. Les contr\^{o}les modulo et round-robin ont les m\^{e}mes assignations primaires dans ce protocole ; leurs diff\'{e}rences sont descriptives, pas causales.
+
+\begin{table}[H]
+\centering
 \small
-\caption{Runs exploratoires 100M \`{a} graine unique sur $2\times$B200. Toutes les lignes utilisent 1,0003B tokens ; les valeurs d'\'{e}valuation sur le flux fixe issu du split train sont report\'{e}es au step 750.}
-\label{tab:100m_b200_ablation}
+\caption{Panneau A : ablations 100M historiques \`{a} budget appari\'{e} ($2\times$B200, 1,0003B tokens). La perte d'\'{e}valuation utilise le flux fixe du split train FineWeb-Edu au step 750. Le d\'{e}bit n'est comparable qu'au sein de ce panneau.}
+\label{tab:100m_ablation}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Variante} & \textbf{Train loss @ 950} & \textbf{Meilleure val. @ 750} & \textbf{Tok/s fin} \\
+\textbf{Variante} & \textbf{Train @ 950} & \textbf{Eval. @ 750} & \textbf{Tok/s} \\
 \midrule
 Modulo-primaire/secondaire \'{e}quilibr\'{e} + shared & \textbf{4,8205} & \textbf{4,8887} & 321k \\
 Dense residual & 4,8244 & 4,8958 & 397k \\
@@ -418,119 +249,75 @@ Modulo-primaire/secondaire \'{e}quilibr\'{e}, sans shared & 4,9693 & 5,0393 & 33
 \end{tabular}
 \end{table}
 
-\FloatBarrier
+La branche partag\'{e}e est importante dans cette suite : la retirer donne la perte d'\'{e}valuation la plus \'{e}lev\'{e}e, tandis que l'utiliser sans experts r\'{e}siduels rout\'{e}s reste derri\`{e}re les variantes dense et shared-plus-routed. Le run shared \`{a} secondaire \'{e}quilibr\'{e}e obtient la perte la plus basse, de peu devant dense. Chaque ligne restant single-seed et certains contr\^{o}les nominaux partageant la m\^{e}me assignation primaire, ces r\'{e}sultats comparent les composants mais n'\'{e}tablissent pas un classement causal des assignations fixes.
 
-\FloatBarrier
+Pour tester le contr\^{o}le reviewer-relevant par routeur appris avant d'engager des runs full-budget, le panneau B utilise un shard mmap FineWeb-Edu tokenis\'{e} avec o200k et 99,6M tokens d'entra\^{i}nement sur $2\times$RTX PRO 6000 Blackwell. Les quatre variantes utilisent la m\^{e}me graine, le m\^{e}me ordre de tokens, le m\^{e}me backbone de 98,2M param\`{e}tres, le m\^{e}me batch et le m\^{e}me scheduler. Les routeurs contextuels s\'{e}lectionnent deux experts depuis les \'{e}tats cach\'{e}s et n'utilisent aucune statistique de fr\'{e}quence. Le contr\^{o}le lexical utilise au contraire les comptages corpus exacts pour \'{e}quilibrer sa route secondaire fixe.
 
-\subsection{Comparaison de scaling (300M, 8B tokens)}
-\label{sec:scaling_300m}
-
-Pour valider l'architecture corrig\'{e}e \`{a} plus grande \'{e}chelle, nous entra\^{i}nons des mod\`{e}les iso-param\`{e}tres (Table~\ref{tab:config_300m}) sur un budget FineWeb-Edu de 8B tokens. Les deux runs utilisent le m\^{e}me batch global de 1\,048\,576 tokens/step (8 GPUs $\times$ batch 64 $\times$ s\'{e}quence 2048) ; num\'{e}ro de step identique \'{e}quivaut donc \`{a} tokens vus identiques, sans interpolation n\'{e}cessaire.
-
-Les deux runs partent d'une perte initiale comparable (TR 10,58, dense 10,54). Token-Routed est en retard durant la phase initiale : au step 100 ($\approx$105M tokens), l'\'{e}cart est de $+0,177$ en faveur de dense, avec un pic \`{a} $+0,31$ vers le step 40. Le premier gain train logg\'{e} appara\^{i}t au step 740 et le premier gain sur le flux d'\'{e}valuation au step 750. Au dernier checkpoint d'\'{e}valuation commun (step 7 500 ; 7,864B tokens), Token-Routed atteint \textbf{2,932897} contre \textbf{2,948246}. Au step 7 620, la perte train est \textbf{2,923100} contre \textbf{2,932437} ; la moyenne des 50 derniers steps uniques vaut \textbf{2,928258} contre \textbf{2,944597}. Le flux d'\'{e}valuation provient du split train FineWeb-Edu et n'est pas un holdout ind\'{e}pendant.
-
-\begin{figure}[!htbp]
+\begin{table}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
-\caption{Courbes de scaling 300M corrig\'{e}es \`{a} iso-batch (1\,048\,576 tokens/step). Token-Routed (rouge) est en retard durant les $\approx$700 premiers steps, atteint la parit\'{e}, puis passe devant.}
-\label{fig:300m_loss_curves}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.72\textwidth]{fig_300m_eval_win.png}
-\caption{Loss du flux d'\'{e}valuation au m\^{e}me step. Token-Routed pr\'{e}sente un d\'{e}ficit initial, croise dense au step 750 et reste devant jusqu'au dernier checkpoint commun au step 7 500 (7,864B tokens). Le flux provient du split train.}
-\label{fig:300m_eval_win}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_300m_loss_gap.png}
-\caption{\'{E}cart de perte d'entra\^{i}nement au m\^{e}me step (= tokens vus, iso-batch), calcul\'{e} comme perte Token-Routed moins perte dense. Les valeurs n\'{e}gatives indiquent que Token-Routed est devant ; l'\'{e}cart devient n\'{e}gatif au step logg\'{e} 740.}
-\label{fig:300m_loss_gap}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_300m_expert_balance.png}
-\caption{Utilisation des experts pendant le run Token-Routed 300M corrig\'{e}. Les quatre experts restent actifs et proches de l'\'{e}quilibre ; le gain observ\'{e} ne vient pas d'un effondrement d'expert.}
-\label{fig:300m_expert_balance}
-\end{figure}
-
-\begin{table}[!htbp]
-\centering
-\caption{Comparaison scaling 300M \`{a} iso-batch (1\,048\,576 tokens/step), run complet 8B tokens. Train-loss au m\^{e}me step. Un \'{e}cart n\'{e}gatif indique Token-Routed en avance. Derni\`{e}re ligne : moyenne liss\'{e}e sur les 50 derniers steps log\'{e}s.}
-\label{tab:scaling_300m_result}
-\begin{tabular}{lcccc}
+\small
+\caption{Panneau B : diagnostic court des routeurs appris ($2\times$RTX PRO 6000 Blackwell, 99,6M tokens). Les valeurs ne sont comparables qu'au sein de ce panneau, pas avec le panneau A. La perte train rapport\'{e}e est la perte de langage ; le terme auxiliaire est exclu.}
+\label{tab:100m_router_short}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Step} & \textbf{Tokens vus} & \textbf{Dense (306,5M)} & \textbf{TR (306,5M, k=2)} & \textbf{\'{E}cart (TR $-$ Dense)} \\
+\textbf{Variante} & \textbf{Params} & \textbf{Train @ 95} & \textbf{Eval. @ 75} \\
 \midrule
-100             & 105M  & 6,6698 & 6,8464          & $+0,177$ \\
-500             & 524M  & 4,4450 & 4,4796          & $+0,035$ \\
-700             & 734M  & 3,8567 & 3,8619          & $+0,005$ \\
-1000            & 1,05B & 3,5500 & \textbf{3,5324} & $\mathbf{-0,018}$ \\
-2000            & 2,10B & 3,1953 & \textbf{3,1720} & $\mathbf{-0,023}$ \\
-4000            & 4,19B & 3,0925 & \textbf{3,0738} & $\mathbf{-0,019}$ \\
-6000            & 6,29B & 3,0061 & \textbf{2,9906} & $\mathbf{-0,015}$ \\
-7620            & 7,99B & 2,9324 & \textbf{2,9231} & $\mathbf{-0,009}$ \\
-\midrule
-liss\'{e} 50 derniers & --- & 2,9446 & \textbf{2,9283} & $\mathbf{-0,016}$ \\
+Top-2 contextuel appris + \'{e}quilibrage auxiliaire & 98,213M & \textbf{7,4655} & \textbf{7,5647} \\
+R\'{e}siduel dense & 98,197M & 7,4734 & 7,5766 \\
+Top-2 contextuel appris + \'{e}quilibrage loss-free & 98,213M & 7,5072 & 7,6052 \\
+Modulo-primaire/secondaire corpus-balanced + shared & 98,197M & 7,5310 & 7,6273 \\
 \bottomrule
 \end{tabular}
 \end{table}
-\FloatBarrier
 
-\paragraph{Throughput d'entra\^{i}nement.} Le mod\`{e}le Token-Routed 300M utilise une grande branche partag\'{e}e plus une petite branche rout\'{e}e top-$k=2$ ; il ne vise donc pas \`{a} \'{e}tre un benchmark de vitesse top-1 pur. Les deux runs ont \'{e}t\'{e} entra\^{i}n\'{e}s sur 8$\times$B300 ; dense atteint environ 0,95M tokens/s et Token-Routed environ 0,75M tokens/s au m\^{e}me batch global (1\,048\,576 tokens/step). Toutes les comparaisons de qualit\'{e} ci-dessus sont \`{a} tokens vus appari\'{e}s. Une comparaison wall-clock appari\'{e}e r\'{e}pondrait \`{a} une autre question---si l'impl\'{e}mentation actuelle est plus efficace en calcul---et favoriserait la baseline dense plus rapide tant que la branche r\'{e}siduelle rout\'{e}e n'est pas davantage optimis\'{e}e. Nous rapportons donc le throughput s\'{e}par\'{e}ment et ne revendiquons pas d'efficacit\'{e} wall-clock. Le lookup de la table de routage est lui-m\^{e}me $O(1)$ et ne n\'{e}cessite pas de synchronisation de routeur appris.
+\`{A} ce budget court, l'\'{e}quilibrage auxiliaire am\'{e}liore la perte d'\'{e}valuation de 0,0119 face au dense et de 0,0626 face au contr\^{o}le lexical fixe. Son terme auxiliaire au step 95 vaut 0,0101, aucun expert n'est mort et son exc\`{e}s de param\`{e}tres face au contr\^{o}le lexical est de 15 360 param\`{e}tres (0,0156\%). L'\'{e}quilibrage loss-free reste derri\`{e}re le dense. Ces \'{e}carts early-budget \`{a} graine unique ont motiv\'{e} la promotion de la seule variante auxiliaire vers le budget complet. Le d\'{e}bit est omis car les panneaux A et B utilisent des mat\'{e}riels diff\'{e}rents et le chemin lexical public ne dispose pas du kernel sparse optimis\'{e} de l'impl\'{e}mentation historique.
 
-\subsection{V\'{e}rification d'inf\'{e}rence}
-\label{sec:inference_perf}
+Le run promu a termin\'{e} 1,0003B tokens sur la m\^{e}me configuration o200k que le panneau B. Le panneau C le rapporte s\'{e}par\'{e}ment car aucun contr\^{o}le dense ou lexical full-budget n'a encore \'{e}t\'{e} ex\'{e}cut\'{e} sur cette configuration ; sa perte et son d\'{e}bit ne doivent donc pas \^{e}tre compar\'{e}s directement au panneau A.
 
-Pour v\'{e}rifier que le routage lexical d\'{e}terministe est compatible avec les stacks de serving standards, nous benchmarkons \'{e}galement un petit checkpoint Token-Routed ant\'{e}rieur sur vLLM 0.18 avec PagedAttention et CUDA graphs. Ce r\'{e}sultat de serving n'est pas utilis\'{e} comme preuve pour la comparaison de scaling 300M corrig\'{e}e ci-dessus, et ne doit pas \^{e}tre interpr\'{e}t\'{e} comme un claim d'efficacit\'{e} compute pour le checkpoint 300M. Il v\'{e}rifie seulement qu'un routage d\'{e}terministe par token peut \^{e}tre d\'{e}ploy\'{e} sans routeur appris ni dispatch all-to-all.
-
-Sur un seul GPU NVIDIA RTX PRO 6000 (96\,Go), avec 100 requ\^{e}tes concurrentes \`{a} 10 RPS, 128 tokens d'entr\'{e}e et 1\,900 tokens de sortie, le checkpoint atteint un d\'{e}bit soutenu de \textbf{8\,078 tokens/s} (pic 10\,179 tokens/s), avec un TTFT m\'{e}dian de 29,3\,ms et une ITL m\'{e}diane de 7,9\,ms (Figure~\ref{fig:inference_bench}). Les mesures d'inf\'{e}rence mises \`{a} jour pour le checkpoint 300M corrig\'{e} restent un travail futur.
-
-\begin{figure}[!htbp]
+\begin{table}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_inference_bench.png}
-\caption{V\'{e}rification d'inf\'{e}rence sur un seul NVIDIA RTX PRO 6000 (96\,Go). 100 requ\^{e}tes \`{a} 10 RPS, 128 tokens d'entr\'{e}e, 1\,900 tokens de sortie. D\'{e}bit soutenu : 8\,078 tok/s ; pic : 10\,179 tok/s ; TTFT m\'{e}dian : 29,3\,ms ; ITL m\'{e}diane : 7,9\,ms. Ce benchmark utilise un petit checkpoint ant\'{e}rieur et n'est rapport\'{e} que comme v\'{e}rification de compatibilit\'{e} de d\'{e}ploiement.}
-\label{fig:inference_bench}
-\end{figure}
+\small
+\caption{Panneau C : promotion full-budget du routeur appris avec \'{e}quilibrage auxiliaire ($2\times$RTX PRO 6000 Blackwell, 1,0003B tokens). Ce run isol\'{e} n'est pas une comparaison appari\'{e}e avec le panneau A. La perte train exclut le terme auxiliaire.}
+\label{tab:1b_router_promotion}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variante} & \textbf{Params} & \textbf{Train @ 950} & \textbf{Eval. @ 750} & \textbf{Tok/s} \\
+\midrule
+Top-2 contextuel appris + \'{e}quilibrage auxiliaire & 98,213M & 4,7909 & 4,8580 & 95k \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Au step 750, le trafic expert vaut 0,2400/0,2533/0,2610/0,2457, aucun expert n'est mort et le terme auxiliaire vaut 0,0100. Le run confirme que la configuration promue reste entra\^{i}nable et \'{e}quilibr\'{e}e jusqu'\`{a} 1B tokens, mais une comparaison de routage full-budget exige encore des contr\^{o}les appari\'{e}s sur cette configuration exacte.
 \FloatBarrier
 
-\subsection{Limitations et travaux futurs}
+%=============================================================================
+\section{Discussion et limitations}
+\label{sec:discussion}
 \label{sec:limitations}
+%=============================================================================
 
-\begin{itemize}
-    \item \textbf{R\'{e}sultat de scaling single-seed} : le run 300M corrig\'{e} est une comparaison compl\`{e}te \`{a} budget align\'{e} sur 8B tokens, mais il reste un seul seed par architecture. Des seeds suppl\'{e}mentaires quantifieraient la robustesse de l'\'{e}cart liss\'{e} final de $-0,0163$ \`{a} la variance d'initialisation.
-    \item \textbf{Absence de r\'{e}sultat frequency-aware} : les checkpoints \'{e}valu\'{e}s utilisent des tables lexicales modulo permut\'{e}es. Le bin-packing sensible aux fr\'{e}quences existe comme chemin de code non \'{e}valu\'{e} et n'est pas soutenu par les r\'{e}sultats rapport\'{e}s.
-    \item \textbf{Bin-packing Zipf en travaux futurs} : une \'{e}tude propre devra estimer les fr\'{e}quences sur le flux d'entra\^{i}nement exact, construire et s\'{e}rialiser la table gloutonne avant l'initialisation, v\'{e}rifier la charge attendue et r\'{e}alis\'{e}e, puis comparer \`{a} la baseline modulo permut\'{e}e sur plusieurs seeds. Les checkpoints devront stocker un hash de la table et la provenance des fr\'{e}quences afin d'emp\^{e}cher tout fallback silencieux.
-    \item \textbf{Benchmarks standardis\'{e}s} : l'\'{e}valuation zero-shot sur ARC-Easy, HellaSwag et MMLU via \texttt{lm-evaluation-harness} doit \^{e}tre relanc\'{e}e sur les checkpoints 300M corrig\'{e}s.
-\end{itemize}
+Le r\'{e}sultat montre qu'un ID fixe peut s\'{e}lectionner un sous-espace de param\`{e}tres r\'{e}siduels utile dans une paire de runs appari\'{e}s. Il ne montre pas que les IDs d\'{e}finissent des classes expertes s\'{e}mantiques. Les assignations sont des partitions modulo \`{a} une permutation propre \`{a} chaque couche pr\`{e}s, et les experts s\'{e}lectionn\'{e}s transforment des \'{e}tats cach\'{e}s contextuels. Une interpr\'{e}tation possible est qu'une capacit\'{e} stable conditionn\'{e}e par token modifie les fonctions disponibles pour les \'{e}l\'{e}ments lexicaux r\'{e}currents, tandis que le MLP partag\'{e} et l'attention conservent le traitement contextuel commun.
+
+L'exp\'{e}rience n'isole pas non plus l'identit\'{e} du token de toutes les explications alternatives. Les ablations 100M de la Section~\ref{sec:ablation_100m} incluent des contr\^{o}les r\'{e}siduels, al\'{e}atoires et contextuels appris. Le panneau court de routeurs appris favorise l'\'{e}quilibrage auxiliaire, et la variante s\'{e}lectionn\'{e}e termine son run de promotion \`{a} 1B tokens sans expert mort. Cependant, les deux utilisent une graine, un autre tokenizer/shard et un autre mat\'{e}riel que le panneau historique, tandis que la configuration promue ne dispose pas de contr\^{o}les dense ou lexical full-budget appari\'{e}s. Elle valide donc le run promu sur le plan op\'{e}rationnel sans \'{e}tablir la sup\'{e}riorit\'{e} du routage appris ou fixe. Les contr\^{o}les fixes historiques ne permettent pas non plus un classement causal des assignations car certains contr\^{o}les nominaux r\'{e}alisent les m\^{e}mes assignations primaires.
+
+La comparaison 300M utilise une graine par architecture. Son flux d'\'{e}valuation vient du split train et aucune \'{e}valuation downstream standardis\'{e}e ou OOD n'est disponible pour les checkpoints rapport\'{e}s. L'impl\'{e}mentation rout\'{e}e est plus lente que dense au m\^{e}me batch. Enfin, les buffers de lookup sauvegard\'{e}s r\'{e}alisent la r\`{e}gle modulo-primary/secondary-balanced par cardinalit\'{e}, et non une assignation d\'{e}pendant des fr\'{e}quences. Ces limites pr\'{e}servent l'observation centrale mais la restreignent \`{a} la perte matched-token de cette paire de runs.
 
 %=============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 %=============================================================================
 
-Nous avons pr\'{e}sent\'{e} COMPLEXITY-DEEP, une architecture qui ajoute \`{a} un tronc MLP dense partag\'{e} une petite branche lexicale r\'{e}siduelle top-2 d\'{e}terministe, sans routeur appris ni perte auxiliaire d'\'{e}quilibrage.
-
-Dans le run 300M corrig\'{e}, la variante Token-Routed pr\'{e}sente un d\'{e}ficit initial, gagne d'abord sur la perte train au step 740 et sur le flux d'\'{e}valuation au step 750. Au dernier checkpoint d'\'{e}valuation commun, elle reste devant ; l'\'{e}cart final sur la moyenne des 50 derniers steps uniques est $-0,0163$. Ce r\'{e}sultat est un signal de qualit\'{e} \`{a} tokens appari\'{e}s pour cette paire de runs, sans preuve de g\'{e}n\'{e}ralisation multi-seed, de holdout ind\'{e}pendant ou d'avantage wall-clock.
+L'identit\'{e} du token fournit un signal de routage r\'{e}siduel utile dans la paire de runs \`{a} 306,5M param\`{e}tres : apr\`{e}s 8B tokens d'entra\^{i}nement, le mod\`{e}le shared-plus-routed termine devant une baseline dense appari\'{e}e. L'\'{e}cart observ\'{e} de NLL sur le flux d'\'{e}valuation est de $0,0153$ ; l'incertitude n'est pas estim\'{e}e car chaque architecture n'utilise qu'une graine, et l'impl\'{e}mentation rout\'{e}e est plus lente en temps mural. Cette observation pose une question concr\`{e}te aux syst\`{e}mes MoE appris : quelle quantit\'{e} de routage contextuel est n\'{e}cessaire lorsqu'un chemin dense partag\'{e} traite d\'{e}j\`{a} le calcul commun ?
 
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail \'{e}tudie une modification architecturale pour les mod\`{e}les de langage. La soumission n'inclut pas les poids ; toute publication future devra respecter les exigences applicables de donn\'{e}es, de s\'{e}curit\'{e} et de licence.
 
 \subsubsection*{D\'{e}claration de reproductibilit\'{e}}
-Le suppl\'{e}ment fournit une impl\'{e}mentation PyTorch corrig\'{e}e par audit, des tests exacts du routage, les configurations, les scripts de figures et le tokenizer 32k v\'{e}rifi\'{e}. Il s'agit d'un artefact de reproduction, non d'un snapshot historique inchang\'{e}.
+Le suppl\'{e}ment fournit l'impl\'{e}mentation PyTorch, les tests de routage, les configurations r\'{e}alis\'{e}es, les m\'{e}triques brutes et les scripts de figures. Il inclut le tokenizer 32k de l'exp\'{e}rience principale ainsi que la configuration o200k et le script de pr\'{e}paration du shard utilis\'{e}s pour le diagnostic court des routeurs appris.
 
-\clearpage
 \bibliography{references}
 \bibliographystyle{tmlr}
-
-\appendix
-\section{Courbes d'entra\^{i}nement}
-\label{app:training}
-
-Des courbes d'entra\^{i}nement et figures d'analyse suppl\'{e}mentaires sont disponibles dans le mat\'{e}riel suppl\'{e}mentaire.
 
 \end{document}

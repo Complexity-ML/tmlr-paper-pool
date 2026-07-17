@@ -9,6 +9,7 @@
 \usepackage{url}
 \usepackage{booktabs}
 \usepackage{placeins}
+\usepackage{float}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{graphicx}
@@ -27,7 +28,7 @@
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
-\title{COMPLEXITY-DEEP: Deterministic Lexical Residual Routing for Language Model MLPs}
+\title{Token Identity as a Routing Signal for Residual MLP Experts}
 
 \author{\name Anonymous authors \\
       \addr Paper under double-blind review}
@@ -45,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-We present COMPLEXITY-DEEP, a decoder-only language model that augments a shared dense MLP backbone with a small deterministic lexical residual branch. A permuted-modulo primary assignment and a deterministic balanced secondary assignment select two experts per token; routing therefore requires neither a learned router nor an auxiliary load-balancing loss. We evaluate the design in a matched single-seed comparison at approximately 300M parameters over 8B FineWeb-Edu tokens. On the fixed evaluation stream drawn from the FineWeb-Edu training split, at the last common evaluation checkpoint (step 7,500), the Token-Routed model reaches loss 2.932897 versus 2.948246 for the dense baseline. At step 7,620, train loss is 2.923100 versus 2.932437, and the mean over the last 50 unique logged steps is 2.928258 versus 2.944597. These results support a deliberately narrow claim: in this matched run pair, a small deterministic lexical branch improves a shared dense backbone at equal token budget. They do not establish a wall-clock efficiency advantage, an independent held-out validation result, or frequency-aware routing, and replication across seeds remains future work.
+Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. A separate 99.6M-token diagnostic finds a contextual top-2 router with auxiliary load balancing slightly ahead of matched dense and lexical controls. The selected router was subsequently trained for 1.0003B tokens and reaches evaluation-stream NLL 4.8580 on its separate o200k setup; without matched full-budget controls, this promotion run is not a ranking against the historical ablations. Standardized held-out evaluation and replication across seeds remain open.
 \end{abstract}
 
 %=============================================================================
@@ -53,42 +54,24 @@ We present COMPLEXITY-DEEP, a decoder-only language model that augments a shared
 \label{sec:introduction}
 %=============================================================================
 
-Large Language Models (LLMs) have revolutionized natural language processing in recent years \citep{vaswani2017attention, brown2020language}. However, dominant architectures present several limitations:
+Mixture-of-experts language models usually learn a router from each token's contextual hidden state \citep{shazeer2017outrageously,fedus2022switch,jiang2024mixtral}. The router can adapt expert selection to context, but it also introduces parameters, balancing objectives, and dispatch decisions. Fixed routing provides a useful counterpoint: if a simple token-level signal allocates parameters effectively, some benefits attributed to contextual routing may instead come from stable conditional capacity.
 
-\begin{itemize}
-    \item \textbf{Computational cost of MoE}: Mixture of Experts architectures \citep{shazeer2017outrageously, fedus2022switch} require complex load balancing and routing mechanisms.
-    \item \textbf{Training instability}: Large models often suffer from numerical instabilities requiring careful hyperparameter tuning.
-\end{itemize}
+We test this idea in a deliberately asymmetric design. Every token passes through a shared dense SwiGLU MLP. Token identity selects two additional experts, each much narrower than the shared branch, and their output is added as a gated residual. Selection is context independent, but expert computation is not: both the shared branch and the selected experts receive the contextual hidden state produced by the transformer. The experiment therefore asks whether token identity is useful for selecting a residual parameter subspace, not whether lexical lookup can replace contextual computation.
 
-We study COMPLEXITY-DEEP, an architecture centered on deterministic lexical residual routing:
+The primary comparison uses two 306.5M-parameter models trained for the same 8B-token budget. The models share their transformer backbone and stored MLP width; one uses a dense width of 4,096, while the other divides that width into a shared width of 3,840 and four routed experts of width 64, with two active per token. At the last common checkpoint of a fixed evaluation stream, the routed model reaches NLL 2.9329 and the dense model 2.9482. The routed model trains more slowly in the current implementation, and the evaluation stream comes from the FineWeb-Edu training split.
 
-\begin{enumerate}
-    \item \textbf{Fixed lexical routing}: Token IDs are mapped to expert pairs by deterministic, layer-specific permutations of modulo partitions, eliminating learned routing and auxiliary load-balancing losses.
-    \item \textbf{Shared-plus-routed residual MLP}: A large dense MLP processes every token while small routed experts provide token-identity-conditioned residual capacity.
-\end{enumerate}
-
-The routed branch should be viewed as a \emph{residual lexical path} on top of a shared dense MLP, not as a wholesale replacement for dense computation. The shared branch supplies context-dependent capacity available to every token, while the routed branch adds a small amount of token-identity-conditioned capacity. Our evidence concerns the combined design; it does not by itself establish semantic expert specialization.
+This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing tables and capacity accounting, and reports the full matched-token trajectory. We also report a separate short-budget diagnostic with learned contextual routers and matched dense and lexical controls. It is a promotion test, not a substitute for the 1B-token comparison.
 
 %=============================================================================
 \section{Related Work}
 \label{sec:related_work}
 %=============================================================================
 
-\subsection{Transformer Architectures}
+Learned MoE routers use hidden states to select experts and commonly add an auxiliary objective or another balancing mechanism \citep{shazeer2017outrageously,fedus2022switch,jiang2024mixtral}. These systems test the value of content-adaptive specialization. Our experiment tests a different axis: whether stable token identity is already informative when routing controls only a narrow residual branch.
 
-The Transformer architecture \citep{vaswani2017attention} has become the standard for language models. Recent developments include attention optimizations like Flash Attention \citep{dao2022flashattention}, Grouped Query Attention (GQA) \citep{ainslie2023gqa}, and Rotary Position Embeddings (RoPE) \citep{su2021roformer}.
+Hash Layers is the closest precedent \citep{roller2021hash}. It showed that fixed hashes of local token features can compete with learned routing in language models. Our design keeps a dense MLP active for every token and applies fixed top-2 lookup only to a small residual capacity. This makes the routed path a correction to common computation rather than the main feed-forward transformation.
 
-\subsection{Mixture of Experts}
-
-MoE architectures \citep{shazeer2017outrageously} enable scaling model capacity without proportionally increasing computational cost. Switch Transformer \citep{fedus2022switch} and Mixtral \citep{jiang2024mixtral} have demonstrated the effectiveness of this approach, but at the cost of increased complexity (load balancing, inter-GPU communication).
-
-\subsection{Fixed Lexical Routing and Shared Experts}
-
-The closest precedent for routing by token identity is Hash Layers \citep{roller2021hash}, which selects feed-forward parameters through fixed hashes and reports that local token features can compete with learned routing without router parameters or auxiliary balancing losses. COMPLEXITY-DEEP differs by retaining a large dense path for every token and using the fixed lookup only for a narrow top-2 residual branch. Shared experts have also been used in DeepSeekMoE to capture common knowledge while reducing redundancy among routed experts \citep{dai2024deepseekmoe}. Recent statistical analysis gives conditional sample-efficiency results for shared-expert mixtures under explicit estimation assumptions \citep{nguyen2025sharedexperts}. Those guarantees do not directly apply here because our expert selection is a fixed lexical lookup and our evidence is a single matched run pair; we cite them as motivation for the shared-plus-routed decomposition, not as a theorem about the evaluated checkpoint.
-
-\subsection{Normalization and Stability}
-
-RMSNorm \citep{zhang2019root} and QK-Normalization \citep{dehghani2023scaling} are modern techniques for stabilizing large model training.
+Shared experts also appear in architectures such as DeepSeekMoE \citep{dai2024deepseekmoe}, where they capture computation common to all tokens. Statistical analyses of shared-expert mixtures provide results under explicit estimation assumptions \citep{nguyen2025sharedexperts}. We use the shared-plus-routed decomposition as an architectural prior; our measurements do not test those theoretical guarantees.
 
 %=============================================================================
 \section{COMPLEXITY-DEEP Architecture}
@@ -97,172 +80,69 @@ RMSNorm \citep{zhang2019root} and QK-Normalization \citep{dehghani2023scaling} a
 
 \subsection{Overview}
 
-COMPLEXITY-DEEP is a decoder-only architecture composed of $L$ identical layers. Each layer comprises:
-\begin{enumerate}
-    \item A multi-head attention block
-    \item An MLP block with token routing
-    \item Residual connections with pre-normalization (RMSNorm)
-\end{enumerate}
+The architecture changes only the feed-forward sublayer of a decoder-only transformer. Attention remains standard GQA with 16 query heads, four key/value heads, QK-Norm, RoPE, and causal scaled dot-product attention. Figure~\ref{fig:architecture} isolates the changed computation. For token ID $t$ and contextual hidden state $\mathbf{x}$, the token ID selects residual parameters while both MLP branches transform $\mathbf{x}$.
 
-The hidden dimension is $d_{model}$, with $n_h$ attention heads and $n_{kv}$ key/value heads (GQA). Figure~\ref{fig:architecture} provides a simplified schematic of the 300M residual Token-Routed design used in the corrected scaling comparison.
-
-\begin{figure}[p]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.68\textwidth,height=0.78\textheight,keepaspectratio]{architecture_complexity_deep.png}
-\caption{Simplified schematic of the 300M COMPLEXITY-DEEP architecture. Each decoder layer comprises GQA attention followed by a shared dense MLP branch plus a small deterministically routed lexical residual branch.}
+\includegraphics[width=\textwidth]{architecture_complexity_deep.png}
+\caption{Token identity controls only the fixed top-2 lookup. The shared branch and selected residual experts receive the same contextual hidden state.}
 \label{fig:architecture}
 \end{figure}
-\FloatBarrier
 
-\subsection{Token-Routed MLP}
+\subsection{Fixed token-identity routing}
 \label{sec:token_routed_mlp}
 
-Unlike learned MoEs, the evaluated model uses a fixed top-2 lookup table determined solely by token identity. For layer $l$, the primary expert is a seeded permutation $\pi_l$ of the token-ID residue:
+Each layer stores a fixed top-2 lookup. The primary expert is a seeded permutation $\pi_l$ of the token-ID residue:
 \begin{equation}
 r_{l,1}(t)=\pi_l(t \bmod E), \qquad E=4.
 \label{eq:routing}
 \end{equation}
-The 32,000-entry vocabulary is therefore divided exactly evenly: every layer assigns 8,000 token IDs to each primary expert. The secondary table is constructed once, in ascending token-ID order, by selecting the currently least-used expert other than the primary:
+The secondary table is constructed once, in ascending token-ID order, by selecting the least-used expert other than the primary:
 \begin{equation}
 r_{l,2}(t)=\operatorname*{arg\,min}_{e\neq r_{l,1}(t)}
 \sum_{u=0}^{t-1}\mathbb{1}[r_{l,2}(u)=e],
 \label{eq:secondary_routing}
 \end{equation}
-with deterministic lowest-index tie breaking. This is the \emph{modulo-primary/balanced-secondary} rule realised by the evaluated checkpoints. Both routed outputs receive fixed weight $0.5$ before the learned routed-branch scalar is applied.
+with lowest-index tie breaking. Because the 32,000-token vocabulary is divisible by four, each expert receives exactly 8,000 primary token IDs. This balances vocabulary cardinality, not corpus traffic.
 
-For hidden state $\mathbf{x}$ associated with token ID $t$, the evaluated residual MLP is
+\subsection{Shared MLP and residual experts}
+
+For contextual hidden state $\mathbf{x}$ and token ID $t$, the feed-forward output is
 \begin{equation}
 \operatorname{MLP}_l(\mathbf{x},t)=g^s_l\operatorname{Shared}_l(\mathbf{x})+g^r_l\!\sum_{j=1}^{2}0.5\,\operatorname{Expert}_{r_{l,j}(t)}(\mathbf{x}),
 \label{eq:mlp_routed}
 \end{equation}
-where $g^s_l$ and $g^r_l$ are learned scalar branch gates, initialized to $1.0$ and $0.1$, respectively. These branch gates are distinct from the fixed $0.5/0.5$ weights used to combine the selected experts. Routing is lexical rather than semantic: contextual hidden states vary with the sequence, but expert selection does not.
-
-Each expert is a standard MLP with SiLU activation (SwiGLU):
+where $g^s_l$ and $g^r_l$ are learned scalar gates initialized to $1.0$ and $0.1$. The selected expert outputs use fixed weights $0.5/0.5$. Every branch is a SwiGLU transformation,
 \begin{equation}
 \text{Expert}_i(\mathbf{x}) = (\text{SiLU}(\mathbf{x}\mathbf{W}^i_{gate}) \odot \mathbf{x}\mathbf{W}^i_{up})\mathbf{W}^i_{down}
 \label{eq:expert}
 \end{equation}
+and the shared branch has the same form with its own parameters. Token identity selects functions, but those functions operate on contextual states. The language-model objective is applied after the complete network; there is no independent expert objective.
 
-\paragraph{What lexical routing conditions.} Fixed routing does not cluster hidden states by meaning. It assigns each token identity to two expert functions, while those functions receive contextual hidden states produced by preceding attention layers. The language-model loss is computed only after the complete residual network and output head; it is not an independent per-expert objective. Different lexical assignments may induce different contextual training distributions, but disjoint token IDs do not imply independent gradients, orthogonal weights, or semantic specialization. The matched comparison therefore evaluates the combined shared-plus-routed architecture, not a claim about individual expert semantics.
+\subsection{Capacity and sparse dispatch}
 
-\textbf{Operational advantages:}
-\begin{itemize}
-    \item No auxiliary load balancing loss (hyperparameter savings)
-    \item Static expert lookup with no learned expert-selection network
-\end{itemize}
-
-\subsection{Final Architecture}
-\label{sec:architecture_v2}
-
-The evaluated architecture combines sparse dispatch, a large shared branch, and a small top-2 routed residual branch.
-
-\subsubsection{Sparse Routed-Branch Dispatch}
-\label{sec:sparse_dispatch}
-
-The implementation evaluates each routed expert only on the tokens assigned to it:
+Let $d$ be the model dimension, $d_s$ the shared width, $d_e$ the width of each routed expert, $E$ the number of stored experts, and $k$ the number selected per token. Ignoring biases, the routed MLP stores
 \begin{equation}
-\text{out}[\text{mask}_e] = \text{Expert}_e(\mathbf{x}[\text{mask}_e]) \quad \text{for } e = 0, \ldots, E-1
+P_{\mathrm{TR}}=3d(d_s+E d_e)
 \end{equation}
-This avoids evaluating every routed expert for every token. It does not make the complete shared-plus-top-2 model equivalent to a $1\times$ dense MLP in wall-clock cost.
-
-\subsubsection{Shared Lexical Expert}
-\label{sec:shared_expert}
-
-A shared dense MLP processes all tokens, while two narrow experts provide a lexical residual. The output combines both branches:
+parameters per layer and evaluates intermediate width
 \begin{equation}
-\text{MLP}_{\text{output}}(\mathbf{x},t) = g_s\text{SwiGLU}_{\text{shared}}(\mathbf{x}) + g_r\sum_{j=1}^{2}0.5\,\text{SwiGLU}_{r_j(t)}(\mathbf{x})
+ d_{\mathrm{active}}=d_s+k d_e
 \end{equation}
-where each component is a standard SwiGLU MLP:
-\begin{align}
-\text{SwiGLU}_{\text{shared}}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^s_{gate}) \odot \mathbf{x}\mathbf{W}^s_{up})\mathbf{W}^s_{down} \\
-\text{SwiGLU}_{e}(\mathbf{x}) &= (\text{SiLU}(\mathbf{x}\mathbf{W}^e_{gate}) \odot \mathbf{x}\mathbf{W}^e_{up})\mathbf{W}^e_{down}
-\end{align}
-In the 300M checkpoint, the shared intermediate width is 3,840, while each of four routed experts has width 64; two routed experts are active per token. Thus the routed component is intentionally a small correction to a dense-compatible shared trunk, not a replacement of equal width.
-
-\subsubsection{Vocabulary Assignment}
-
-The saved lookup tables confirm layer-specific permuted-modulo routing. Because 32,000 is divisible by four, each primary expert receives exactly 8,000 vocabulary entries. This is vocabulary-cardinality balance, not corpus-frequency balance.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{expert_balance.png}
-\caption{Vocabulary assignment recovered from the 300M checkpoint. Every layer assigns exactly 8,000 of the 32,000 token IDs to each primary expert through a layer-specific permutation of modulo routing. This figure does not represent corpus-frequency traffic.}
-\label{fig:expert_balance}
-\end{figure}
-\FloatBarrier
-
-
+per token. In the evaluated model, $(d_s,E,d_e,k)=(3840,4,64,2)$: stored width is $4096$, matching the dense baseline, and active width is $3968$. The implementation groups tokens by their fixed assignments and evaluates only the selected routed experts. Small expert kernels and dispatch still add runtime overhead, measured in Section~\ref{sec:scaling_300m}.
 
 %=============================================================================
-\section{Theoretical Analysis}
-\label{sec:theory}
+\section{Experimental Design}
+\label{sec:experiments}
 %=============================================================================
-
-We state only properties that apply directly to the evaluated shared-plus-top-2 architecture.
-
-\subsection{Primary Vocabulary Balance}
-
-\begin{proposition}[Primary assignment balance]
-\label{thm:perfect_balance}
-Let token IDs be $\{0,\ldots,|V|-1\}$ and let $E$ be the number of experts. Under $r_{l,1}(t)=\pi_l(t\bmod E)$, each expert receives either $\lfloor |V|/E\rfloor$ or $\lceil |V|/E\rceil$ primary token IDs. If $E\mid |V|$, each receives exactly $|V|/E$ IDs.
-\end{proposition}
-
-\begin{proof}
-Before permutation, residue class $e$ contains the IDs $e,e+E,e+2E,\ldots$ below $|V|$. Their cardinalities differ by at most one. Because $\pi_l$ is a bijection of expert labels, it preserves these cardinalities. For $|V|=32000$ and $E=4$, every layer therefore assigns exactly 8,000 primary IDs to each expert.
-\end{proof}
-
-This is vocabulary-cardinality balance, not corpus-traffic balance. Non-uniform token frequencies can produce unequal realised traffic even when each expert owns the same number of primary IDs.
-
-\subsection{Matched Capacity and Active MLP Width}
-
-Let $d$ be the model dimension, $d_s$ the shared SwiGLU width, $d_e$ each routed-expert width, $E$ the number of stored experts, and $k$ the number selected per token. Ignoring biases, the MLP parameter count per layer is
-\begin{equation}
-P_{\mathrm{TR}}=3d(d_s+E d_e),
-\end{equation}
-while the width evaluated for each token is
-\begin{equation}
-d_{\mathrm{active}}=d_s+k d_e.
-\end{equation}
-For the evaluated model, $(d_s,E,d_e,k)=(3840,4,64,2)$. Hence the stored MLP width is $3840+4\times64=4096$, exactly matching the dense baseline width, whereas each token traverses width $3840+2\times64=3968$. This accounting describes the evaluated architecture; it does not imply a wall-clock speedup because dispatch and small expert kernels add overhead. Measured training throughput is reported in Section~\ref{sec:scaling_300m}.
-
-\subsection{Scope of Interpretation}
-
-The deterministic lookup removes learned expert selection and auxiliary load-balancing losses, but also gives up content-adaptive routing. Fixed lexical assignments may lead experts to learn different functions, yet the reported measurements do not establish semantic or functional specialization. Our evidence concerns end-to-end language-model loss, routing-table structure, and observed expert traffic.
-
-%=============================================================================
-\section{Implementation}
-\label{sec:implementation}
-%=============================================================================
-
-\subsection{Technical Specifications}
-
-Our implementation uses PyTorch 2.0+ with the following optimizations:
 
 \begin{table}[h]
 \centering
-\caption{Implementation choices}
-\label{tab:implementation}
-\begin{tabular}{ll}
-\toprule
-\textbf{Component} & \textbf{Technical Choice} \\
-\midrule
-Attention & SDPA / Flash Attention \\
-Positional Encoding & RoPE ($\theta = 10000$) \\
-Normalization & RMSNorm + QK-Norm \\
-Activation & SiLU (SwiGLU) \\
-Precision & BF16 (training and inference) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-\begin{table}[h]
-\centering
-\caption{COMPLEXITY-DEEP 300M model configurations (iso-params comparison)}
+\caption{Matched 300M model configurations.}
 \label{tab:config_300m}
 \begin{tabular}{lll}
 \toprule
-\textbf{Parameter} & \textbf{Token-Routed (MoE)} & \textbf{Dense Baseline} \\
+\textbf{Parameter} & \textbf{Token-identity residual} & \textbf{Dense baseline} \\
 \midrule
 Layers ($L$) & 18 & 18 \\
 Dimension ($d_{model}$) & 1024 & 1024 \\
@@ -282,132 +162,83 @@ Active MLP path/token & shared + 2 routed experts & dense SwiGLU \\
 \end{tabular}
 \end{table}
 
-\subsection{300M Model Configuration}
+\subsection{Primary comparison}
 \label{sec:config_300m}
 
-For the corrected iso-parameter scaling comparison (Section~\ref{sec:scaling_300m}), we train two architectures at $\sim$300M parameters (Table~\ref{tab:config_300m}): a residual Token-Routed model (306.5M, 4 experts, top-$k=2$, large shared expert and small routed branch) and a dense SwiGLU baseline (306.5M, $d_{ff} = 4096$). Both share the same backbone (18 layers, $d_{model}=1024$, GQA 16/4, RMSNorm, QK-Norm), tokenizer, sequence length, optimizer, warmup schedule, and FineWeb-Edu token budget.
+We train a token-identity residual model and a dense baseline, both with 306.5M parameters. They use the same 18-layer backbone, tokenizer, 2,048-token context, FineWeb-Edu stream, optimizer, learning-rate schedule, BF16 precision, and 8B-token budget. The global batch is 1,048,576 tokens (eight GPUs, batch 64 per GPU), so equal training steps imply equal tokens seen. The controlled difference is the MLP parameterization in Table~\ref{tab:config_300m}.
 
-%=============================================================================
-\section{Experiments}
-\label{sec:experiments}
-%=============================================================================
-
-\subsection{Pilot Study}
-\label{sec:pilot_study}
-
-Earlier pilot runs motivated removing the adaptive residual controller and retaining a shared dense path. The evidence in this paper is centered on the corrected 300M iso-parameter comparison (Table~\ref{tab:config_300m}); pilot runs are not used to support the main claim.
-
-\subsection{Training Recipe}
+\subsection{Optimization}
 \label{sec:training_recipe}
 
-Our training recipe follows standard modern LLM practices (LLaMA, GPT-3) with two automatic adjustments:
-
-\paragraph{Dynamic warmup.} Instead of a fixed number of warmup steps (which can represent 52\% of training for short runs), warmup is automatically set to \textbf{5\% of total steps}. This ensures a constant warmup/training ratio regardless of run duration.
-
-\paragraph{GPT-style initialization.} Residual output projections (\texttt{o\_proj}, \texttt{down\_proj}) are initialized with reduced standard deviation:
+Both models use AdamW with $(\beta_1,\beta_2)=(0.9,0.95)$, weight decay $0.1$, gradient clipping at $1.0$, a 5\% warmup, and cosine decay to 10\% of the peak learning rate. Residual output projections use
 \begin{equation}
 \sigma_{\text{residual}} = \frac{0.02}{\sqrt{2 \times L}}
 \end{equation}
-where $L$ is the number of layers. This prevents the residual stream from growing with depth~\citep{radford2019language}.
+for $L$ layers \citep{radford2019language}.
 
-\paragraph{Other hyperparameters.} Weight decay = 0.1 (standard GPT-3/LLaMA), AdamW with $\beta_1 = 0.9$, $\beta_2 = 0.95$, gradient clipping $= 1.0$, BF16 precision, cosine scheduler with min\_lr = 10\% of peak.
-
-\subsection{Routing-Table Verification}
+\subsection{Routing and evaluation protocol}
 \label{sec:routing_verification}
 
-We audited the final checkpoint rather than inferring routing from run names. For every one of the 18 layers, the saved 32,000-entry primary-routing table is exactly a layer-specific permutation of $t\bmod4$. Each expert therefore receives 8,000 primary vocabulary assignments. The run did not contain a corpus-frequency table, so we make no frequency-aware or corpus-balanced routing claim. The observed expert traffic reported below is an empirical property of this run, not a guarantee of the routing rule.
+Checkpoint inspection shows that the primary and secondary lookup buffers in all 18 layers exactly match Equations~\ref{eq:routing}--\ref{eq:secondary_routing}. We therefore identify the realized mechanism from the stored assignments themselves as permuted-modulo primary routing with a cardinality-balanced secondary assignment, rather than inferring it from the historical run label. The fixed evaluation stream is drawn from the FineWeb-Edu training split; it is consistent across the two runs but is not an independent held-out set.
 
 %=============================================================================
-\section{Discussion}
-\label{sec:discussion}
+\section{Results}
+\label{sec:results}
 %=============================================================================
 
-\subsection{Comparison with Existing Architectures}
+\subsection{Scaling Comparison (300M, 8B tokens)}
+\label{sec:scaling_300m}
 
-\begin{table}[h]
-\centering
-\caption{Architectural comparison}
-\label{tab:arch_comparison}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Architecture} & \textbf{Routing} & \textbf{Load balancing loss} \\
-\midrule
-Transformer & No & N/A \\
-Switch Transformer & Soft & Required \\
-Mixtral & Top-2 & Required \\
-\textbf{COMPLEXITY-DEEP} & \textbf{Hard lexical} & \textbf{Not used} \\
-\bottomrule
-\end{tabular}
-\end{table}
+The token-identity residual model begins behind the dense baseline and crosses it after roughly 0.8B tokens (Figure~\ref{fig:300m_loss_curves}). At the last common evaluation checkpoint, step 7,500 or 7.864B tokens, its evaluation-stream NLL is \textbf{2.9329} versus \textbf{2.9482} for dense, a difference of $-0.0153$. At the final matched training point, step 7,620, training NLL is \textbf{2.9231} versus \textbf{2.9324}. Table~\ref{tab:scaling_300m_result} labels the two metrics explicitly.
 
 \begin{figure}[!htbp]
 \centering
-\includegraphics[width=0.65\textwidth]{head_expert_heatmap.png}
-\caption{Attention head $\times$ expert diagnostic heatmap for the median layer. The figure is descriptive; no head--expert coupling claim is inferred from it.}
-\label{fig:head_expert_heatmap}
-\end{figure}
-\FloatBarrier
-
-\subsection{Token-Routing Analysis}
-\label{sec:token_routing_analysis}
-
-The saved routing tables guarantee equal primary vocabulary cardinality, while telemetry measures realised corpus traffic:
-
-\begin{itemize}
-    \item \textbf{Near-balanced utilization}: In the 300M run, final observed expert utilization is 0.2481/0.2635/0.2481/0.2403, with no dead experts.
-    \item \textbf{Balanced norms}: Expert norms remain close across routed branches.
-    \item \textbf{No dead branch}: All four experts receive nonzero observed traffic
-\end{itemize}
-
-These diagnostics rule out dead routed branches in the observed run, but they do not establish semantic or functional specialization of individual experts. We therefore restrict the empirical claim to the end-to-end loss of the combined architecture.
-
-\begin{table}[h]
-\centering
-\caption{Token-Routed MLP vs soft-routing MoE}
-\label{tab:moe_comparison}
-\begin{tabular}{llll}
-\toprule
-\textbf{Criterion} & \textbf{Token-Routed} & \textbf{Standard MoE} & \textbf{Advantage} \\
-\midrule
-Expert assignment & Fixed lexical table & Learned gating & Depends \\
-Specialization claim & Not established here & Content-conditioned & Standard MoE \\
-Deployment & No gating network & Gating + dispatch & Token-Routed \\
-Determinism & 100\% & No (softmax) & Token-Routed \\
-Shared Expert & Yes (common patterns) & Optional & Token-Routed \\
-Selection signal & Fixed token identity & Hidden-state content & Standard MoE \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Exploratory 100M Ablations (1B tokens)}
-\label{sec:ablation_100m_preview}
-
-We retain the requested seven-way 100M suite as an exploratory diagnostic, but correct its labels and scope. Every run uses the same $2\times$B200 budget: 954 steps $\times$ 2 GPUs $\times$ batch/GPU 256 $\times$ sequence length 2048 $=1.0003$B tokens. The FineWeb streaming path did not populate the frequency table expected by the configuration formerly labelled ``Zipf,'' so that condition used modulo-based primary routing with a deterministic alternate secondary route. We call it \emph{modulo-primary/balanced-secondary top-2} below. Nominal modulo and round-robin controls have equivalent primary assignments in this setting; their single-run differences must not be interpreted as causal routing-strategy effects.
-
-The modulo-primary/balanced-secondary shared run has the lowest logged losses in the suite: train loss 4.8205 at step 950 and evaluation loss 4.8887 at step 750, versus 4.8244 and 4.8958 for the dense residual control. These gaps are small, single-seed, and comparable to differences between nominally equivalent controls. The suite therefore provides exploratory evidence only: the no-shared and random-assignment runs are worse in this suite, and the current routed implementation is slower than dense. It does not establish causal routing-strategy effects or validate frequency-aware bin-packing.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_100m_b200_ablation_train_curves.png}
-\caption{Exploratory 100M training curves at a matched 1.0003B-token budget. The condition originally logged as ``Zipf shared'' is identified by its realised fixed lookup: modulo-primary/balanced-secondary top-2. Single-run differences between modulo and round-robin controls are not interpreted causally.}
-\label{fig:100m_b200_ablation_train_curves}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.78\textwidth]{fig_100m_b200_ablation_eval_ranking.png}
-\caption{Evaluation losses for the exploratory 100M suite. All routed variants use fixed top-2 lookup tables; none uses a learned expert router.}
-\label{fig:100m_b200_ablation_eval_ranking}
+\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
+\caption{Training loss at matched token counts. The token-identity residual model (red) begins behind the dense baseline (blue), crosses after roughly 0.8B tokens, and remains ahead through the end of training.}
+\label{fig:300m_loss_curves}
 \end{figure}
 
 \begin{table}[!htbp]
 \centering
 \small
-\caption{Exploratory single-seed 100M runs on $2\times$B200. All rows use 1.0003B tokens; evaluation values on the fixed FineWeb-Edu training-split stream are at step 750.}
-\label{tab:100m_b200_ablation}
+\setlength{\tabcolsep}{4pt}
+\caption{Matched training and evaluation-stream NLL. The evaluation row uses the fixed FineWeb-Edu training-split stream; all other rows are training measurements. Negative differences favor the token-identity residual model.}
+\label{tab:scaling_300m_result}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Metric} & \textbf{Step} & \textbf{Tokens} & \textbf{Dense} & \textbf{TR ($k=2$)} & \textbf{Gap} \\
+\midrule
+Train & 100  & 105M   & 6.6698 & 6.8464          & $+0.177$ \\
+Train & 500  & 524M   & 4.4450 & 4.4796          & $+0.035$ \\
+Train & 1000 & 1.05B  & 3.5500 & \textbf{3.5324} & $\mathbf{-0.018}$ \\
+Train & 2000 & 2.10B  & 3.1953 & \textbf{3.1720} & $\mathbf{-0.023}$ \\
+Train & 4000 & 4.19B  & 3.0925 & \textbf{3.0738} & $\mathbf{-0.019}$ \\
+Train & 6000 & 6.29B  & 3.0061 & \textbf{2.9906} & $\mathbf{-0.015}$ \\
+Eval. stream & 7500 & 7.864B & 2.9482 & \textbf{2.9329} & $\mathbf{-0.0153}$ \\
+Train & 7620 & 7.99B  & 2.9324 & \textbf{2.9231} & $\mathbf{-0.009}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
+\paragraph{Routing traffic.} Final expert utilization is 0.2481/0.2635/0.2481/0.2403, with no dead expert. This is an observed property of the run, not a consequence of equal vocabulary cardinality.
+
+\paragraph{Training throughput.} On the same $8\times$B300 system and global batch, dense training reaches approximately 0.95M tokens/s and token-identity residual training approximately 0.75M tokens/s. The reported quality comparison is matched by tokens, not by elapsed time.
+
+\subsection{100M Ablations}
+\label{sec:ablation_100m}
+
+Panel A contains seven historical single-seed models of approximately 100M parameters, each trained for 1.0003B tokens on the recorded $2\times$B200 setup. The suite separates the shared branch, the residual branch, and several fixed top-2 assignments. The condition configured for frequency-aware routing contains no populated frequency table and therefore realizes modulo-primary/balanced-secondary lookup. Nominal modulo and round-robin controls have equivalent primary assignments in this setup, so differences between those rows are descriptive rather than causal.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Panel A: historical matched-budget 100M ablations ($2\times$B200, 1.0003B tokens). Evaluation loss uses the fixed FineWeb-Edu training-split stream at step 750. Throughput is comparable only within this panel.}
+\label{tab:100m_ablation}
 \begin{tabular}{lccc}
 \toprule
-\textbf{Variant} & \textbf{Train loss @ 950} & \textbf{Val. loss @ 750} & \textbf{Tok/s near end} \\
+\textbf{Variant} & \textbf{Train @ 950} & \textbf{Eval. @ 750} & \textbf{Tok/s} \\
 \midrule
 Modulo-primary/balanced-secondary + shared & \textbf{4.8205} & \textbf{4.8887} & 321k \\
 Dense residual & 4.8244 & 4.8958 & 397k \\
@@ -420,119 +251,75 @@ Modulo-primary/balanced-secondary, no shared & 4.9693 & 5.0393 & 334k \\
 \end{tabular}
 \end{table}
 
-\FloatBarrier
+The shared branch is important in this suite: removing it gives the highest evaluation loss, while using it without routed residual experts also trails the dense and shared-plus-routed variants. The balanced-secondary shared run records the lowest loss, narrowly ahead of dense. Because each row is a single seed and some nominal controls share the same primary assignment, these results support the component comparison but not a causal ranking of fixed assignment strategies.
 
-\subsection{Scaling Comparison (300M, 8B tokens)}
-\label{sec:scaling_300m}
+To test the reviewer-relevant learned-router control before committing to full-budget runs, Panel B uses a separate o200k-tokenized FineWeb-Edu mmap shard and 99.6M training tokens on $2\times$RTX PRO 6000 Blackwell GPUs. All four variants use the same seed, token order, 98.2M-parameter backbone, batch, and schedule. The contextual routers select top-2 experts from hidden states and use no token-frequency statistics. The lexical control instead uses exact corpus-derived token counts to balance its fixed secondary route.
 
-To validate the corrected architecture at larger scale, we train iso-parameter models (Table~\ref{tab:config_300m}) on an 8B-token FineWeb-Edu budget. Both runs use the same global batch of 1,048,576 tokens/step (8 GPUs $\times$ batch 64 $\times$ sequence length 2048), so matched raw step number equals matched tokens seen, and no token-grid interpolation is required.
-
-The two runs start from comparable random-init loss (TR 10.58, dense 10.54). The Token-Routed model places most MLP capacity in the shared dense path and uses a much smaller fixed lexical branch as a residual. It trails the dense baseline early: at step 100 ($\approx$105M tokens) the gap is $+0.177$ in favor of dense, peaking near $+0.31$ around step 40. The first logged train-loss win appears at step 740 ($\approx$776M tokens), and the first matched evaluation-stream win appears at step 750. At the last common evaluation checkpoint (step 7,500; 7.864B tokens), Token-Routed reaches \textbf{2.932897} versus \textbf{2.948246} for dense, a gap of \textbf{$-0.015349$}. At step 7,620 ($\approx$7.99B tokens), train loss is \textbf{2.923100} versus \textbf{2.932437}; after deduplicating resumed log rows by step, the mean over the last 50 unique logged steps is \textbf{2.928258} versus \textbf{2.944597}, a gap of \textbf{$-0.016339$}. Observed traffic remains near-balanced (0.2481/0.2635/0.2481/0.2403, zero dead experts), although the routing rule itself guarantees only equal vocabulary cardinality. This evaluation stream is drawn from the FineWeb-Edu training split and is not an independent held-out validation set.
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
-\caption{Corrected 300M scaling curves at iso-batch (1,048,576 tokens/step). Token-Routed (red) trails dense (blue) during the first $\approx$700 steps, reaches parity, then crosses over: by step 1000 ($\approx$1.05B tokens) Token-Routed leads.}
-\label{fig:300m_loss_curves}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.72\textwidth]{fig_300m_eval_win.png}
-\caption{Matched evaluation-stream loss. Token-Routed has an early deficit at the first two evaluation points, crosses the dense baseline at step 750 ($\approx$786M tokens), and remains ahead through the last common evaluation checkpoint at step 7,500 (7.864B tokens). The stream is drawn from the FineWeb-Edu training split, not a held-out validation split.}
-\label{fig:300m_eval_win}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_300m_loss_gap.png}
-\caption{Training-loss gap at matched step (= matched tokens, iso-batch), computed as Token-Routed loss minus dense loss. Negative values indicate Token-Routed ahead. The gap is positive during the early transient and first turns negative at logged step 740.}
-\label{fig:300m_loss_gap}
-\end{figure}
-
-\begin{figure}[!htbp]
-\centering
-\includegraphics[width=0.9\textwidth]{fig_300m_expert_balance.png}
-\caption{Expert utilization during the corrected 300M Token-Routed run. All four experts remain active and near-balanced; the observed matched-budget win is not caused by expert collapse.}
-\label{fig:300m_expert_balance}
-\end{figure}
-
-\begin{table}[!htbp]
+\begin{table}[H]
 \centering
 \small
-\setlength{\tabcolsep}{4pt}
-\caption{300M scaling comparison at iso-batch (1,048,576 tokens/step), full 8B-token run. Train loss is reported at matched step. Negative gap indicates Token-Routed ahead. Last row is the smoothed mean of the final 50 logged steps.}
-\label{tab:scaling_300m_result}
-\begin{tabular}{lcccc}
+\caption{Panel B: short-budget learned-router diagnostic ($2\times$RTX PRO 6000 Blackwell, 99.6M tokens). Values are comparable only within this panel and not with Panel A. The reported train loss is language-model loss; the auxiliary term is excluded.}
+\label{tab:100m_router_short}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Step} & \textbf{Tokens seen} & \textbf{Dense (306.5M)} & \textbf{TR (306.5M, k=2)} & \textbf{Gap (TR $-$ Dense)} \\
+\textbf{Variant} & \textbf{Params} & \textbf{Train @ 95} & \textbf{Eval. @ 75} \\
 \midrule
-100         & 105M  & 6.6698 & 6.8464          & $+0.177$ \\
-500         & 524M  & 4.4450 & 4.4796          & $+0.035$ \\
-700         & 734M  & 3.8567 & 3.8619          & $+0.005$ \\
-1000        & 1.05B & 3.5500 & \textbf{3.5324} & $\mathbf{-0.018}$ \\
-2000        & 2.10B & 3.1953 & \textbf{3.1720} & $\mathbf{-0.023}$ \\
-4000        & 4.19B & 3.0925 & \textbf{3.0738} & $\mathbf{-0.019}$ \\
-6000        & 6.29B & 3.0061 & \textbf{2.9906} & $\mathbf{-0.015}$ \\
-7620        & 7.99B & 2.9324 & \textbf{2.9231} & $\mathbf{-0.009}$ \\
-\midrule
-last 50 (smoothed) & --- & 2.9446 & \textbf{2.9283} & $\mathbf{-0.016}$ \\
+Learned contextual top-2 + auxiliary balancing & 98.213M & \textbf{7.4655} & \textbf{7.5647} \\
+Dense residual & 98.197M & 7.4734 & 7.5766 \\
+Learned contextual top-2 + loss-free balancing & 98.213M & 7.5072 & 7.6052 \\
+Modulo-primary/corpus-balanced secondary + shared & 98.197M & 7.5310 & 7.6273 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\FloatBarrier
+At this short budget, auxiliary balancing improves evaluation loss by 0.0119 over dense and 0.0626 over the fixed lexical control. Its step-95 auxiliary term is 0.0101, no expert is dead, and its parameter excess over the lexical control is 15,360 parameters (0.0156\%). Loss-free balancing remains behind dense. These single-seed early-budget differences motivated promoting only the auxiliary variant to the full token budget. Throughput is omitted because Panel A and Panel B use different hardware and the public lexical path lacks the optimized sparse kernel used by the historical implementation.
 
-\paragraph{Training throughput.} The 300M Token-Routed model uses a large shared branch plus a small top-$k=2$ routed branch, so it is not intended as a pure top-1 speed benchmark. Both runs were trained on 8$\times$B300, dense reaching approximately 0.95M tokens/s and Token-Routed approximately 0.75M tokens/s at identical global batch (1,048,576 tokens/step). All quality comparisons above are at matched tokens seen. A matched-wall-clock comparison would answer a different question---whether the current implementation is more compute-efficient---and would favor the faster dense baseline unless the routed residual branch is further optimized. We therefore report throughput separately and do not claim wall-clock efficiency. The routing table lookup itself is $O(1)$ and does not require learned-router synchronization.
+The promoted run completed 1.0003B tokens on the same o200k setup as Panel B. Panel C reports it separately because no dense or lexical full-budget control has yet been run on that setup; its loss and throughput therefore must not be compared directly with Panel A.
 
-\subsection{Inference Sanity Check}
-\label{sec:inference_perf}
-
-To check that deterministic lexical routing is compatible with standard serving stacks, we also benchmarked an earlier small Token-Routed checkpoint on vLLM 0.18 with PagedAttention and CUDA graphs. This serving result is not used as evidence for the corrected 300M scaling comparison above, and it should not be interpreted as a compute-efficiency claim for the 300M checkpoint. It only verifies that deterministic per-token routing can be deployed without a learned router or all-to-all dispatch.
-
-On a single NVIDIA RTX PRO 6000 GPU (96 GB), serving 100 concurrent requests at 10 RPS with 128 input tokens and 1,900 output tokens, the checkpoint reaches a sustained throughput of \textbf{8,078 tokens/s} (peak 10,179 tokens/s), with median time-to-first-token (TTFT) of 29.3\,ms and median inter-token latency (ITL) of 7.9\,ms (Figure~\ref{fig:inference_bench}). Updated inference measurements for the corrected 300M checkpoint remain future work.
-
-\begin{figure}[!htbp]
+\begin{table}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_inference_bench.png}
-\caption{Inference sanity check on a single NVIDIA RTX PRO 6000 (96\,GB). 100 requests at 10 RPS, 128 input tokens, 1,900 output tokens. Sustained throughput: 8,078 tok/s; peak: 10,179 tok/s; median TTFT: 29.3\,ms; median ITL: 7.9\,ms. This benchmark uses an earlier small checkpoint and is reported only as a deployment compatibility check.}
-\label{fig:inference_bench}
-\end{figure}
+\small
+\caption{Panel C: full-budget promotion of the auxiliary-balanced learned router ($2\times$RTX PRO 6000 Blackwell, 1.0003B tokens). This standalone run is not a matched comparison with Panel A. The reported train loss excludes the auxiliary term.}
+\label{tab:1b_router_promotion}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variant} & \textbf{Params} & \textbf{Train @ 950} & \textbf{Eval. @ 750} & \textbf{Tok/s} \\
+\midrule
+Learned contextual top-2 + auxiliary balancing & 98.213M & 4.7909 & 4.8580 & 95k \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At step 750, expert traffic is 0.2400/0.2533/0.2610/0.2457 with no dead expert, and the auxiliary term is 0.0100. The run confirms that the promoted configuration remains trainable and balanced through 1B tokens, but a full-budget routing comparison still requires matched controls on this exact setup.
 \FloatBarrier
 
-\subsection{Limitations and Future Work}
+%=============================================================================
+\section{Discussion and Limitations}
+\label{sec:discussion}
 \label{sec:limitations}
+%=============================================================================
 
-\begin{itemize}
-    \item \textbf{Single-seed scaling result}: The corrected 300M run is a full 8B-token matched-budget comparison, but it is still a single seed per architecture. Additional seeds would quantify whether the final $-0.0163$ smoothed gap is robust to initialization variance.
-    \item \textbf{No frequency-aware routing result}: The evaluated checkpoints use permuted-modulo lexical tables. Frequency-aware bin-packing exists as an unevaluated code path and is not supported by the reported results.
-    \item \textbf{Frequency-aware routing as future work}: A clean follow-up should estimate token frequencies from the exact training stream, construct and serialize the greedy Zipf bin-packing table before model initialization, verify expected and realised expert traffic, and compare it against the verified permuted-modulo baseline over multiple seeds. Checkpoints should record a routing-table hash and frequency-source metadata so that silent fallback is impossible.
-    \item \textbf{Standardized benchmarks}: Zero-shot evaluation on ARC-Easy, HellaSwag, and MMLU via \texttt{lm-evaluation-harness} should be rerun on the corrected 300M checkpoints.
-\end{itemize}
+The result shows that a fixed token ID can select a useful residual parameter subspace in one matched run pair. It does not show that token IDs encode semantic expert classes. The assignments are modulo partitions up to a layer-specific permutation, and the selected experts transform contextual hidden states. A plausible interpretation is that stable token-conditioned capacity changes which functions are available to recurring lexical items while the shared MLP and attention preserve common contextual processing.
+
+The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, and the selected variant completes its 1B-token promotion run without dead experts. However, both use one seed, a different tokenizer/shard, and different hardware from the historical panel, while the promoted setup has no matched full-budget dense or lexical controls. It therefore validates the promoted run operationally rather than establishing that learned or fixed routing is superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
+
+The 300M comparison uses one seed per architecture. Its evaluation stream comes from the training split, and standardized downstream or out-of-distribution evaluations are not available for the reported checkpoints. The routed implementation is slower than dense at matched batch. Finally, the stored lookup buffers realize the modulo-primary/cardinality-balanced-secondary rule, not frequency-aware assignment. These limits leave the central observation intact but constrain it to matched-token loss for this run pair.
 
 %=============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 %=============================================================================
 
-We presented COMPLEXITY-DEEP, a language model architecture that augments a shared dense MLP backbone with a small deterministic lexical residual branch, without a learned router or auxiliary load-balancing loss.
-
-In the corrected iso-parameter 300M scaling run at iso-batch (1,048,576 tokens/step, approximately 8B tokens), the residual Token-Routed variant has an early deficit during the first $\approx$700 steps (peak gap $+0.31$ near step 40), first wins on logged train loss at step 740 and on the fixed evaluation stream at step 750. At the last common evaluation checkpoint (step 7,500), it remains ahead; the final train-loss gap over the last 50 unique logged steps is $-0.0163$ in favor of Token-Routed (2.9283 vs 2.9446). These results support deterministic lexical routing as a promising matched-token quality signal when used as a residual lexical branch on top of a shared dense MLP backbone. They should not be read as evidence that routing alone replaces dense MLP computation, that the evaluation is held out, or that the result generalizes across seeds. Multi-seed scaling and compute-normalized comparisons remain important next steps.
+Token identity provides a useful residual routing signal in the reported 306.5M-parameter run pair: after 8B training tokens, the shared-plus-routed model finishes ahead of a matched dense baseline. The observed evaluation-stream NLL gap is $0.0153$; uncertainty is not estimated because each architecture has one seed, and the routed implementation is slower in wall-clock training. The observation poses a concrete question for learned MoE systems: how much contextual routing is necessary when a shared dense path already handles common computation?
 
 \subsubsection*{Broader Impact Statement}
 This work studies an architectural modification for language models. The submission does not include model weights; any future release should follow the applicable data, safety, and licensing requirements.
 
 \subsubsection*{Reproducibility Statement}
-For review, the supplementary archive provides an audit-corrected PyTorch implementation, exact routing tests, run configurations, figure-generation scripts, and the verified 32k tokenizer. It is a reproduction artifact rather than an untouched historical source snapshot; the reported limitations identify measurements not included in the archive.
+The supplementary archive provides the PyTorch implementation, routing tests, realized run configurations, raw metrics, and figure-generation scripts. It includes the 32k tokenizer for the primary experiment and the o200k configuration and shard-preparation script for the short learned-router diagnostic.
 
 \clearpage
 \bibliography{references}
 \bibliographystyle{tmlr}
-
-\appendix
-\section{Training Curves}
-\label{app:training}
-
-Additional training curves and analysis figures are available in the supplementary material.
 
 \end{document}
