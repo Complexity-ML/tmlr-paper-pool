@@ -42,6 +42,9 @@ class MLPConfig:
     routed_gate_init: float = 1.0  # Initial routed expert output multiplier.
     top_k: int = 1  # Deterministic Token-Routed top-K lookup.
     top_k_primary_weight: Optional[float] = None  # K>1 primary expert blend weight; None keeps the default 0.95.
+    router_balance_mode: str = "aux_loss"  # Learned router: aux_loss or loss_free_bias.
+    router_aux_loss_coef: float = 0.01
+    router_bias_update_rate: float = 0.001
     layer_idx: int = 0  # Layer index propagated from the block; used for the built-in per-layer routing permutation.
     static_expert_capacity: bool = False  # Fixed capacity for torch.export / pipeline tracing.
     collect_moe_telemetry: bool = False  # Per-layer expert/RMS diagnostics. Off by default for throughput.
@@ -63,6 +66,12 @@ class MLPConfig:
             raise ValueError("top_k cannot exceed num_experts")
         if self.top_k_primary_weight is not None and not 0.0 <= self.top_k_primary_weight <= 1.0:
             raise ValueError("top_k_primary_weight must be in [0, 1]")
+        if self.router_balance_mode not in {"aux_loss", "loss_free_bias"}:
+            raise ValueError("router_balance_mode must be 'aux_loss' or 'loss_free_bias'")
+        if self.router_aux_loss_coef < 0.0:
+            raise ValueError("router_aux_loss_coef must be non-negative")
+        if self.router_bias_update_rate < 0.0:
+            raise ValueError("router_bias_update_rate must be non-negative")
         if self.routing_strategy not in {
             "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
         }:

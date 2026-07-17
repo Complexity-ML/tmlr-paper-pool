@@ -188,6 +188,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the MLP type (e.g. 'swiglu' for a dense baseline). Defaults to the profile's token_routed.",
     )
+    parser.add_argument(
+        "--router-balance-mode",
+        choices=["aux_loss", "loss_free_bias"],
+        default="aux_loss",
+        help="Balancing method for --mlp-type learned_router.",
+    )
+    parser.add_argument(
+        "--router-aux-loss-coef",
+        type=float,
+        default=0.01,
+        help="Coefficient of the learned-router auxiliary load-balancing loss.",
+    )
+    parser.add_argument(
+        "--router-bias-update-rate",
+        type=float,
+        default=0.001,
+        help="Per-step correction magnitude for loss-free selection biases.",
+    )
     parser.add_argument("--log-steps", type=int, default=10)
     parser.add_argument("--eval-steps", type=int, default=50)
     parser.add_argument("--eval-batches", type=int, default=8)

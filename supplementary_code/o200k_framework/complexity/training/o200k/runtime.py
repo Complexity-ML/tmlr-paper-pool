@@ -189,3 +189,37 @@ def expert_diversity_loss(model, target: str = "down") -> torch.Tensor | None:
     if not losses:
         return None
     return torch.stack(losses).mean()
+
+
+def learned_router_auxiliary_loss(model) -> torch.Tensor | None:
+    """Return the mean weighted auxiliary loss from learned-router layers."""
+    losses = []
+    for module in model.modules():
+        getter = getattr(module, "router_auxiliary_loss", None)
+        if getter is None or getattr(module, "router_balance_mode", None) != "aux_loss":
+            continue
+        losses.append(getter())
+    if not losses:
+        return None
+    return torch.stack(losses).mean()
+
+
+@torch.no_grad()
+def update_loss_free_router_biases(model, distributed: bool) -> int:
+    """Update each loss-free router from its globally observed assignment load."""
+    updated = 0
+    for module in model.modules():
+        updater = getattr(module, "update_loss_free_bias", None)
+        counts = getattr(module, "last_expert_counts", None)
+        if (
+            updater is None
+            or counts is None
+            or getattr(module, "router_balance_mode", None) != "loss_free_bias"
+        ):
+            continue
+        global_counts = counts.detach().clone()
+        if distributed:
+            dist.all_reduce(global_counts, op=dist.ReduceOp.SUM)
+        updater(global_counts)
+        updated += 1
+    return updated

@@ -85,6 +85,9 @@ class ModelConfig:
     routed_gate_init: float = 1.0  # Initial multiplier for routed expert output
     top_k: int = 1  # Deterministic Token-Routed top-K lookup
     top_k_primary_weight: Optional[float] = None  # K>1 blend weight for primary expert (default: 0.95)
+    router_balance_mode: str = "aux_loss"  # Learned router: aux_loss or loss_free_bias
+    router_aux_loss_coef: float = 0.01
+    router_bias_update_rate: float = 0.001
     static_expert_capacity: bool = False  # Use fixed per-expert dispatch capacity for torch.export / pipeline tracing
     use_custom_kernels: Any = "auto"  # "auto", True, or False. ROCm defaults to PyTorch fallback in auto mode.
     collect_moe_telemetry: bool = False  # Per-layer expert/RMS diagnostics. Disabled by default for throughput.
@@ -183,6 +186,12 @@ class ModelConfig:
             raise ValueError("top_k cannot exceed num_experts")
         if self.top_k_primary_weight is not None and not 0.0 <= self.top_k_primary_weight <= 1.0:
             raise ValueError("top_k_primary_weight must be in [0, 1]")
+        if self.router_balance_mode not in {"aux_loss", "loss_free_bias"}:
+            raise ValueError("router_balance_mode must be 'aux_loss' or 'loss_free_bias'")
+        if self.router_aux_loss_coef < 0.0:
+            raise ValueError("router_aux_loss_coef must be non-negative")
+        if self.router_bias_update_rate < 0.0:
+            raise ValueError("router_bias_update_rate must be non-negative")
         if self.routing_strategy not in {
             "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
         }:

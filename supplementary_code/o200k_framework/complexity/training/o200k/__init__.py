@@ -20,11 +20,13 @@ from .runtime import (
     apply_shared_routed_gates,
     evaluate,
     expert_diversity_loss,
+    learned_router_auxiliary_loss,
     init_distributed,
     reduce_average,
     reduce_average_tensor,
     scheduled_value,
     scheduled_topk_primary_weight,
+    update_loss_free_router_biases,
 )
 
 __all__ = [
@@ -43,6 +45,8 @@ __all__ = [
     "apply_topk_primary_weight",
     "apply_shared_routed_gates",
     "expert_diversity_loss",
+    "learned_router_auxiliary_loss",
+    "update_loss_free_router_biases",
     "RandomTokenDataset",
     "LocalTextDataset",
     "FineWebDataset",

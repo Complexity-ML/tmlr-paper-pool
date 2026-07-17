@@ -39,6 +39,7 @@ from complexity.training.o200k import (
     build_optimizer,
     evaluate,
     expert_diversity_loss,
+    learned_router_auxiliary_loss,
     init_distributed,
     load_checkpoint,
     make_config,
@@ -48,6 +49,7 @@ from complexity.training.o200k import (
     scheduled_topk_primary_weight,
     text_token_frequencies,
     token_shard_frequencies,
+    update_loss_free_router_biases,
 )
 from complexity.training.moe_telemetry import global_expert_shares, global_tr_diagnostics
 from complexity.training.run_config import (
@@ -162,7 +164,7 @@ def main():
         for line in format_run_summary(run_config):
             logger.info(line)
         logger.info(
-            "Config: Token-Routed residual, "
+            f"Config: mlp={config.mlp_type}, router_balance={config.router_balance_mode}, "
             f"hidden={args.hidden_size}, layers={args.num_hidden_layers}, "
             f"GQA={args.num_attention_heads}/{args.num_key_value_heads}, "
             f"inter={args.intermediate_size}, shared_inter={args.shared_intermediate_size}, "
@@ -174,8 +176,7 @@ def main():
             f"learn_gates={args.learn_shared_routed_gates}, "
             f"gates=({args.shared_gate_init}->{args.shared_gate_final},"
             f"{args.routed_gate_init}->{args.routed_gate_final}), "
-            f"expert_diversity={args.expert_diversity_lambda} target={args.expert_diversity_target}, "
-            "lexical_residual_no_mu=True"
+            f"expert_diversity={args.expert_diversity_lambda} target={args.expert_diversity_target}"
         )
         logger.info(
             "Loss: "
@@ -267,6 +268,7 @@ def main():
                 "shared_grad_norm", "routed_grad_norm", "expert_0_grad_norm",
                 "expert_1_grad_norm", "expert_2_grad_norm", "expert_3_grad_norm",
                 "expert_diversity_loss", "expert_diversity_lambda", "total_loss",
+                "router_aux_loss",
             ])
         csv_file.flush()
 
@@ -349,11 +351,14 @@ def main():
                     sync_metrics=False,
                 )
             diversity = expert_diversity_loss(raw_model, args.expert_diversity_target)
+            routing_aux = learned_router_auxiliary_loss(raw_model)
             total_loss = (
                 loss
                 if diversity is None or diversity_lambda <= 0.0
                 else loss + diversity_lambda * diversity
             )
+            if routing_aux is not None:
+                total_loss = total_loss + routing_aux
         total_loss.backward()
         if args.max_grad_norm and args.max_grad_norm > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
@@ -362,6 +367,7 @@ def main():
                 batch_expert_counts(raw_model, input_ids, config.num_experts, distributed)
             )
         optimizer.step()
+        update_loss_free_router_biases(raw_model, distributed)
         scheduler.step()
 
         tokens_since_log += args.batch_size * args.seq_len * world_size
@@ -383,6 +389,11 @@ def main():
             train_diversity_loss = (
                 reduce_average_tensor(diversity, distributed)
                 if diversity is not None
+                else float("nan")
+            )
+            train_router_aux_loss = (
+                reduce_average_tensor(routing_aux, distributed)
+                if routing_aux is not None
                 else float("nan")
             )
             train_ppl = math.exp(min(train_loss, 20))
@@ -411,6 +422,7 @@ def main():
                     f"{train_diversity_loss:.8f}",
                     f"{diversity_lambda:.8e}",
                     f"{train_total_loss:.6f}",
+                    f"{train_router_aux_loss:.8f}",
                 ])
                 csv_file.flush()
                 pbar.set_postfix(
@@ -421,6 +433,7 @@ def main():
                     gate=f"{shared_gate if shared_gate is not None else args.shared_gate_init:.2f}/"
                     f"{routed_gate if routed_gate is not None else args.routed_gate_init:.2f}",
                     div=f"{diversity_lambda:.1e}",
+                    router=f"{train_router_aux_loss:.2e}",
                 )
             t_log = now
             tokens_since_log = 0
