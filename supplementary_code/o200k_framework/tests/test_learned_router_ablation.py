@@ -198,7 +198,7 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "100m_dense_residual" in text
     assert "100m_learned_aux_shared" in text
     assert "100m_learned_loss_free_shared" in text
-    assert "--steps 100" in text
+    assert "--steps 954" in text
     assert "--batch-size 32" in text
     assert "--seq-len 2048" in text
     assert "--gradient-accumulation-steps 8" in text
@@ -209,5 +209,4 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "--tokens-path" in text
     assert "tokens.idx.json" in text
     assert "tokens.bin" in text
-    assert "rtxpro2-100m-s" in text
-    assert "rtxpro2-1b" not in text
+    assert "rtxpro2-1b-s" in text
