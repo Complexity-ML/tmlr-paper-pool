@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Four matched 100M controls on 2x RTX PRO 6000.
-# Full budget per run: 954 steps x 128 seq/GPU x 2 GPUs x 2 accumulation x 2048 tokens
+# Full budget per run: 954 steps x 32 seq/GPU x 2 GPUs x 8 accumulation x 2048 tokens
 #                      = 1,000,341,504 tokens.
 # Default mode is a two-step random-data smoke test. Start paid training with:
 #   MODE=full SEED=42 scripts/ablations_100m/run_2x_rtx_pro_6000_router_baselines.sh
@@ -40,9 +40,10 @@ case "${MODE}" in
       --tokenizer o200k_base
       --vocab-size 200019
       --steps 954
-      --batch-size 128
-      --gradient-accumulation-steps 2
+      --batch-size 32
+      --gradient-accumulation-steps 8
       --seq-len 2048
+      --loss-backend liger
       --eval-steps 100
       --eval-batches 16
       --log-steps 10

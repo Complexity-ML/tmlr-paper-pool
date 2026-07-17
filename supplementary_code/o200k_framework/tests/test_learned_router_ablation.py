@@ -199,8 +199,9 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "100m_learned_aux_shared" in text
     assert "100m_learned_loss_free_shared" in text
     assert "--steps 954" in text
-    assert "--batch-size 128" in text
+    assert "--batch-size 32" in text
     assert "--seq-len 2048" in text
-    assert "--gradient-accumulation-steps 2" in text
+    assert "--gradient-accumulation-steps 8" in text
+    assert "--loss-backend liger" in text
     assert "--tokenizer o200k_base" in text
     assert "--vocab-size 200019" in text
