@@ -1,6 +1,6 @@
 # Supplementary code
 
-This archive contains the anonymized o200k training harness used for the reported Token-Routed lexical residual experiments.
+This archive contains the anonymized o200k training harness used for the reported fixed token-identity residual-routing experiments.
 
 ```text
 supplementary_code/o200k_framework/
@@ -23,8 +23,10 @@ The previous compact 32k reference implementation has been removed from this rev
 - `tokenizer-32k/`: exact 32,000-entry tokenizer required by the verified 300M checkpoint.
 - `results/corrected_300m_scaling.csv`: corrected 300M matched-token summary. Its `eval_loss` fields come from a fixed stream drawn from the FineWeb-Edu training split, not an independent held-out validation set.
 - `results/100m_raw/*.csv`: seven complete exploratory B200 logs, named after the realized routing mechanisms. Historical frequency-aware run labels are not retained because those runs fell back to modulo-primary/balanced-secondary lookup.
+- `results/100m_router_short/`: matched 99.6M-token contextual-router, dense, and fixed token-identity diagnostic logs and run configurations.
+- `results/1b_router_dense/`: matched 1.0003B-token auxiliary-router and dense-control logs and run configurations reported in Panel C.
 
-The implementation is an audit-corrected reproduction of the no-guidance lexical-routing path used by the reported runs. It names the realised routing explicitly as `modulo_balanced_secondary`; requesting frequency-aware routing without a token-frequency table now raises an error instead of silently changing strategies. Routed experts are selected by a fixed token-ID lookup, not by a learned router. For top-2 runs, expert outputs use fixed 0.5/0.5 weights; learned shared/routed gates are branch scalars rather than expert-selection logits.
+The implementation is an audit-corrected reproduction of the fixed token-identity routing path used by the reported runs. It names the realised routing explicitly as `modulo_balanced_secondary`; requesting frequency-aware routing without a token-frequency table now raises an error instead of silently changing strategies. Routed experts are selected by a fixed token-ID lookup, not by a learned router. For top-2 runs, expert outputs use fixed 0.5/0.5 weights; learned shared/routed gates are branch scalars rather than expert-selection logits.
 
 ## Verify routing-control behavior
 

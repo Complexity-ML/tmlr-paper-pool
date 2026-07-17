@@ -46,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. A separate 99.6M-token diagnostic finds a contextual top-2 router with auxiliary load balancing slightly ahead of matched dense and lexical controls. The selected router was subsequently trained for 1.0003B tokens and reaches evaluation-stream NLL 4.8580 on its separate o200k setup; without matched full-budget controls, this promotion run is not a ranking against the historical ablations. Standardized held-out evaluation and replication across seeds remain open.
+Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. A separate 99.6M-token diagnostic finds a contextual top-2 router with auxiliary load balancing slightly ahead of matched dense and fixed token-identity controls. At a matched 1.0003B-token budget on the same o200k setup, however, the dense control reaches evaluation-stream NLL 4.8433 versus 4.8580 for the learned router, reversing the short-budget ordering. Standardized held-out evaluation and replication across seeds remain open.
 \end{abstract}
 
 %=============================================================================
@@ -56,11 +56,11 @@ Learned mixture-of-experts routers use contextual hidden states to decide which 
 
 Mixture-of-experts language models usually learn a router from each token's contextual hidden state \citep{shazeer2017outrageously,fedus2022switch,jiang2024mixtral}. The router can adapt expert selection to context, but it also introduces parameters, balancing objectives, and dispatch decisions. Fixed routing provides a useful counterpoint: if a simple token-level signal allocates parameters effectively, some benefits attributed to contextual routing may instead come from stable conditional capacity.
 
-We test this idea in a deliberately asymmetric design. Every token passes through a shared dense SwiGLU MLP. Token identity selects two additional experts, each much narrower than the shared branch, and their output is added as a gated residual. Selection is context independent, but expert computation is not: both the shared branch and the selected experts receive the contextual hidden state produced by the transformer. The experiment therefore asks whether token identity is useful for selecting a residual parameter subspace, not whether lexical lookup can replace contextual computation.
+We test this idea in a deliberately asymmetric design. Every token passes through a shared dense SwiGLU MLP. Token identity selects two additional experts, each much narrower than the shared branch, and their output is added as a gated residual. Selection is context independent, but expert computation is not: both the shared branch and the selected experts receive the contextual hidden state produced by the transformer. The experiment therefore asks whether token identity is useful for selecting a residual parameter subspace, not whether a fixed token-ID lookup can replace contextual computation.
 
 The primary comparison uses two 306.5M-parameter models trained for the same 8B-token budget. The models share their transformer backbone and stored MLP width; one uses a dense width of 4,096, while the other divides that width into a shared width of 3,840 and four routed experts of width 64, with two active per token. At the last common checkpoint of a fixed evaluation stream, the routed model reaches NLL 2.9329 and the dense model 2.9482. The routed model trains more slowly in the current implementation, and the evaluation stream comes from the FineWeb-Edu training split.
 
-This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing tables and capacity accounting, and reports the full matched-token trajectory. We also report a separate short-budget diagnostic with learned contextual routers and matched dense and lexical controls. It is a promotion test, not a substitute for the 1B-token comparison.
+This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing tables and capacity accounting, and reports the full matched-token trajectory. We also report a separate learned-router diagnostic with matched dense and fixed token-identity controls at short budget, followed by a 1B-token learned-router/dense comparison.
 
 %=============================================================================
 \section{Related Work}
@@ -253,7 +253,7 @@ Modulo-primary/balanced-secondary, no shared & 4.9693 & 5.0393 & 334k \\
 
 The shared branch is important in this suite: removing it gives the highest evaluation loss, while using it without routed residual experts also trails the dense and shared-plus-routed variants. The balanced-secondary shared run records the lowest loss, narrowly ahead of dense. Because each row is a single seed and some nominal controls share the same primary assignment, these results support the component comparison but not a causal ranking of fixed assignment strategies.
 
-To test the reviewer-relevant learned-router control before committing to full-budget runs, Panel B uses a separate o200k-tokenized FineWeb-Edu mmap shard and 99.6M training tokens on $2\times$RTX PRO 6000 Blackwell GPUs. All four variants use the same seed, token order, 98.2M-parameter backbone, batch, and schedule. The contextual routers select top-2 experts from hidden states and use no token-frequency statistics. The lexical control instead uses exact corpus-derived token counts to balance its fixed secondary route.
+To test the reviewer-relevant learned-router control before committing to full-budget runs, Panel B uses a separate o200k-tokenized FineWeb-Edu mmap shard and 99.6M training tokens on $2\times$RTX PRO 6000 Blackwell GPUs. All four variants use the same seed, token order, 98.2M-parameter backbone, batch, and schedule. The contextual routers select top-2 experts from hidden states and use no token-frequency statistics. The fixed token-identity control instead uses exact corpus-derived token counts to balance its fixed secondary route.
 
 \begin{table}[H]
 \centering
@@ -272,25 +272,26 @@ Modulo-primary/corpus-balanced secondary + shared & 98.197M & 7.5310 & 7.6273 \\
 \end{tabular}
 \end{table}
 
-At this short budget, auxiliary balancing improves evaluation loss by 0.0119 over dense and 0.0626 over the fixed lexical control. Its step-95 auxiliary term is 0.0101, no expert is dead, and its parameter excess over the lexical control is 15,360 parameters (0.0156\%). Loss-free balancing remains behind dense. These single-seed early-budget differences motivated promoting only the auxiliary variant to the full token budget. Throughput is omitted because Panel A and Panel B use different hardware and the public lexical path lacks the optimized sparse kernel used by the historical implementation.
+At this short budget, auxiliary balancing improves evaluation loss by 0.0119 over dense and 0.0626 over the fixed token-identity control. Its step-95 auxiliary term is 0.0101, no expert is dead, and its parameter excess over the fixed control is 15,360 parameters (0.0156\%). Loss-free balancing remains behind dense. These single-seed early-budget differences motivated promoting only the auxiliary variant to the full token budget. Throughput is omitted because Panel A and Panel B use different hardware and the public fixed-routing path lacks the optimized sparse kernel used by the historical implementation.
 
-The promoted run completed 1.0003B tokens on the same o200k setup as Panel B. Panel C reports it separately because no dense or lexical full-budget control has yet been run on that setup; its loss and throughput therefore must not be compared directly with Panel A.
+The promoted run and its dense control both completed 1.0003B tokens on the same o200k setup as Panel B. Panel C compares this matched pair separately from Panel A.
 
 \begin{table}[H]
 \centering
 \small
-\caption{Panel C: full-budget promotion of the auxiliary-balanced learned router ($2\times$RTX PRO 6000 Blackwell, 1.0003B tokens). This standalone run is not a matched comparison with Panel A. The reported train loss excludes the auxiliary term.}
+\caption{Panel C: matched full-budget comparison of the auxiliary-balanced learned router and dense control ($2\times$RTX PRO 6000 Blackwell, 1.0003B tokens). This panel is not directly comparable with Panel A. The reported train loss excludes the auxiliary term.}
 \label{tab:1b_router_promotion}
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Variant} & \textbf{Params} & \textbf{Train @ 950} & \textbf{Eval. @ 750} & \textbf{Tok/s} \\
 \midrule
 Learned contextual top-2 + auxiliary balancing & 98.213M & 4.7909 & 4.8580 & 95k \\
+Dense residual & 98.197M & \textbf{4.7849} & \textbf{4.8433} & \textbf{100k} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-At step 750, expert traffic is 0.2400/0.2533/0.2610/0.2457 with no dead expert, and the auxiliary term is 0.0100. The run confirms that the promoted configuration remains trainable and balanced through 1B tokens, but a full-budget routing comparison still requires matched controls on this exact setup.
+At step 750, expert traffic is 0.2400/0.2533/0.2610/0.2457 with no dead expert, and the auxiliary term is 0.0100. The dense control has 0.0147 lower evaluation loss and approximately 5.2\% higher throughput. Thus the auxiliary router's 0.0119 short-budget advantage over dense does not persist to 1B tokens in this single-seed pair. This panel compares learned routing with dense computation; multi-seed replication remains open.
 \FloatBarrier
 
 %=============================================================================
@@ -301,7 +302,7 @@ At step 750, expert traffic is 0.2400/0.2533/0.2610/0.2457 with no dead expert, 
 
 The result shows that a fixed token ID can select a useful residual parameter subspace in one matched run pair. It does not show that token IDs encode semantic expert classes. The assignments are modulo partitions up to a layer-specific permutation, and the selected experts transform contextual hidden states. A plausible interpretation is that stable token-conditioned capacity changes which functions are available to recurring lexical items while the shared MLP and attention preserve common contextual processing.
 
-The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, and the selected variant completes its 1B-token promotion run without dead experts. However, both use one seed, a different tokenizer/shard, and different hardware from the historical panel, while the promoted setup has no matched full-budget dense or lexical controls. It therefore validates the promoted run operationally rather than establishing that learned or fixed routing is superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
+The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, but its matched dense control is ahead at 1B tokens while the promoted router completes without dead experts. These panels use one seed, another tokenizer/shard, and different hardware from the historical panel. They therefore compare learned routing with dense computation on one setup without establishing that learned or fixed routing is generally superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
 
 The 300M comparison uses one seed per architecture. Its evaluation stream comes from the training split, and standardized downstream or out-of-distribution evaluations are not available for the reported checkpoints. The routed implementation is slower than dense at matched batch. Finally, the stored lookup buffers realize the modulo-primary/cardinality-balanced-secondary rule, not frequency-aware assignment. These limits leave the central observation intact but constrain it to matched-token loss for this run pair.
 
