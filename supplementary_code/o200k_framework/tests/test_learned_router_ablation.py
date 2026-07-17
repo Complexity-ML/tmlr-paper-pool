@@ -174,3 +174,5 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "--steps 954" in text
     assert "--batch-size 256" in text
     assert "--seq-len 2048" in text
+    assert "--tokenizer o200k_base" in text
+    assert "--vocab-size 200019" in text

@@ -23,6 +23,8 @@ case "${MODE}" in
   smoke)
     COMMON_ARGS=(
       --dataset random
+      --tokenizer o200k_base
+      --vocab-size 200019
       --steps 2
       --batch-size 2
       --seq-len 128
@@ -35,6 +37,8 @@ case "${MODE}" in
     ;;
   full)
     COMMON_ARGS=(
+      --tokenizer o200k_base
+      --vocab-size 200019
       --steps 954
       --batch-size 256
       --seq-len 2048
