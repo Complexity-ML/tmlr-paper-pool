@@ -4,6 +4,7 @@ set -euo pipefail
 # Four matched 100M controls on 2x RTX PRO 6000.
 # Full budget per run: 954 steps x 32 seq/GPU x 2 GPUs x 8 accumulation x 2048 tokens
 #                      = 1,000,341,504 tokens.
+# Short budget per run: 95 steps with the same effective batch = 99,614,720 tokens.
 # Default mode is a two-step random-data smoke test. Start paid training with:
 #   MODE=full SEED=42 scripts/ablations_100m/run_2x_rtx_pro_6000_router_baselines.sh
 
@@ -13,12 +14,20 @@ TOKENS_PATH="${TOKENS_PATH:-/root/data/fineweb_edu_o200k_1p05b}"
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 export TOKENIZERS_PARALLELISM=false
 
-RUNS=(
-  100m_modulo_balanced_secondary_shared
-  100m_dense_residual
+MODEL_CONFIGS=(
   100m_learned_aux_shared
   100m_learned_loss_free_shared
+  100m_modulo_balanced_secondary_shared
+  100m_dense_residual
 )
+
+require_token_shard() {
+  if [[ ! -f "${TOKENS_PATH}/tokens.idx.json" || ! -f "${TOKENS_PATH}/tokens.bin" ]]; then
+    echo "Verified token shard missing at ${TOKENS_PATH}" >&2
+    echo "Run scripts/prepare_fineweb_o200k_shard.py first." >&2
+    exit 3
+  fi
+}
 
 case "${MODE}" in
   smoke)
@@ -36,12 +45,28 @@ case "${MODE}" in
     )
     PREFIX="rtxpro2-smoke-s${SEED}"
     ;;
+  short)
+    require_token_shard
+    COMMON_ARGS=(
+      --dataset tokens
+      --tokens-path "${TOKENS_PATH}"
+      --tokenizer o200k_base
+      --vocab-size 200019
+      --steps 95
+      --batch-size 32
+      --gradient-accumulation-steps 8
+      --seq-len 2048
+      --loss-backend liger
+      --eval-steps 75
+      --eval-batches 16
+      --log-steps 5
+      --save-steps 95
+      --loss-chunk-tokens 1024
+    )
+    PREFIX="rtxpro2-100m-token-s${SEED}"
+    ;;
   full)
-    if [[ ! -f "${TOKENS_PATH}/tokens.idx.json" || ! -f "${TOKENS_PATH}/tokens.bin" ]]; then
-      echo "Verified token shard missing at ${TOKENS_PATH}" >&2
-      echo "Run scripts/prepare_fineweb_o200k_shard.py first." >&2
-      exit 3
-    fi
+    require_token_shard
     COMMON_ARGS=(
       --dataset tokens
       --tokens-path "${TOKENS_PATH}"
@@ -61,7 +86,7 @@ case "${MODE}" in
     PREFIX="rtxpro2-1b-s${SEED}"
     ;;
   *)
-    echo "MODE must be smoke or full" >&2
+    echo "MODE must be smoke, short, or full" >&2
     exit 2
     ;;
 esac
@@ -76,7 +101,7 @@ for idx in range(count):
 PY
 
 mkdir -p "runs/${PREFIX}"
-for name in "${RUNS[@]}"; do
+for name in "${MODEL_CONFIGS[@]}"; do
   run_name="${PREFIX}-${name}"
   echo "=== ${run_name} ==="
   torchrun --standalone --nproc_per_node=2 scripts/train_100m_o200k_tr_local.py \
