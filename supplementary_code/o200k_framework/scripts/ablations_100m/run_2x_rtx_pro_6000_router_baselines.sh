@@ -20,6 +20,9 @@ MODEL_CONFIGS=(
   100m_modulo_balanced_secondary_shared
   100m_dense_residual
 )
+if [[ -n "${RUN_CONFIGS:-}" ]]; then
+  read -r -a MODEL_CONFIGS <<< "${RUN_CONFIGS}"
+fi
 
 require_token_shard() {
   if [[ ! -f "${TOKENS_PATH}/tokens.idx.json" || ! -f "${TOKENS_PATH}/tokens.bin" ]]; then

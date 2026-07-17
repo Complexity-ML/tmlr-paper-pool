@@ -19,6 +19,19 @@ ABLATION_NAMES = [
 ]
 
 
+def test_token_shard_frequency_counts_are_integer_exact(tmp_path):
+    from complexity.data.token_shards import token_shard_frequencies, write_token_shard
+
+    tokens = [0] * 17 + [1] * 9 + [2] * 3 + [3]
+    write_token_shard(tmp_path, tokens, vocab_size=4, dtype="<u4")
+
+    frequencies = token_shard_frequencies(tmp_path, vocab_size=4)
+
+    assert frequencies.dtype == torch.int64
+    assert frequencies.tolist() == [17, 9, 3, 1]
+    assert int(frequencies.sum().item()) == len(tokens)
+
+
 def test_token_routed_supports_explicit_lexical_routing_strategies():
     from complexity.core.mlp.base import MLPConfig
     from complexity.core.mlp.token_routed import TokenRoutedMLP

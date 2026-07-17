@@ -283,7 +283,7 @@ class TokenRoutedMLP(MLPBase):
             )
         if strategy == "zipf":
             assert freqs is not None
-            freqs = freqs.detach().cpu().float()
+            freqs = freqs.detach().cpu().double()
             sorted_indices = freqs.argsort(descending=True)
             mapping = torch.empty(vocab_size, dtype=torch.long, device="cpu")
             expert_loads = [0.0] * num_experts
@@ -329,7 +329,7 @@ class TokenRoutedMLP(MLPBase):
             raise ValueError(
                 f"token_frequencies length ({freqs.numel()}) must match vocab_size ({vocab_size})"
             )
-        return freqs.detach().cpu().float().clamp_min(0.0)
+        return freqs.detach().cpu().double().clamp_min(0.0)
 
     def _create_topk_token_mapping(
         self,

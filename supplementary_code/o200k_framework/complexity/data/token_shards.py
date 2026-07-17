@@ -218,15 +218,18 @@ def token_shard_frequencies(path: str | Path, vocab_size: int) -> torch.Tensor:
     """Count token frequencies from a memory-mapped token shard."""
 
     tokens, _ = load_token_shard(path)
-    freqs = torch.zeros(vocab_size, dtype=torch.float32)
+    # Counts must remain integer-exact. float32 stops representing unit
+    # increments above 2**24, which silently undercounts common tokens in
+    # billion-token shards and can change frequency-balanced routing tables.
+    freqs = torch.zeros(vocab_size, dtype=torch.int64)
     chunk_size = 8_000_000
     for start in range(0, int(tokens.shape[0]), chunk_size):
         chunk = np.asarray(tokens[start:start + chunk_size], dtype=np.int64)
         valid = chunk[(chunk >= 0) & (chunk < vocab_size)]
         if valid.size == 0:
             continue
-        ids = torch.from_numpy(valid)
-        freqs.scatter_add_(0, ids, torch.ones_like(ids, dtype=torch.float32))
+        counts = np.bincount(valid, minlength=vocab_size).astype(np.int64, copy=False)
+        freqs.add_(torch.from_numpy(counts))
     return freqs
 
 
