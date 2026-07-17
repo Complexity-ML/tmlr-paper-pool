@@ -215,12 +215,18 @@ def main():
             f"backend={args.loss_backend_active}, chunk_tokens={args.loss_chunk_tokens}, "
             f"checkpoint_chunks={args.loss_checkpoint_chunks}, vocab=exact"
         )
-        logger.info(
-            "Optimizer: "
-            f"{args.optimizer}, adam_lr={args.lr:.2e}, weight_decay={args.weight_decay}, "
-            f"muon_lr={args.muon_lr:.2e}, muon_scope={args.muon_scope}, "
-            f"expert_lr_scale={args.expert_lr_scale}"
-        )
+        if args.optimizer == "muon_tr":
+            logger.info(
+                "Optimizer: "
+                f"muon_tr, adam_lr={args.lr:.2e}, muon_lr={args.muon_lr:.2e}, "
+                f"muon_scope={args.muon_scope}, weight_decay={args.weight_decay}, "
+                f"expert_lr_scale={args.expert_lr_scale}"
+            )
+        else:
+            logger.info(
+                "Optimizer: "
+                f"adamw, lr={args.lr:.2e}, weight_decay={args.weight_decay}"
+            )
         if distributed:
             logger.info(f"DDP: world_size={world_size}, per_gpu_batch={args.batch_size}")
 
