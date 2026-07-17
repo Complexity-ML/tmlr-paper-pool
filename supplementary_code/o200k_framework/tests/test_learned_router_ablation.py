@@ -108,6 +108,16 @@ def test_o200k_parser_propagates_learned_router_balance_mode():
     assert config.router_bias_update_rate == 0.003
 
 
+def test_corpus_frequencies_are_excluded_from_learned_and_dense_routers():
+    from complexity.training.o200k_pretrain import uses_corpus_routing_frequencies
+
+    assert not uses_corpus_routing_frequencies("learned_router", "modulo_balanced_secondary")
+    assert not uses_corpus_routing_frequencies("swiglu", "modulo_balanced_secondary")
+    assert uses_corpus_routing_frequencies("token_routed", "modulo_balanced_secondary")
+    assert uses_corpus_routing_frequencies("token_routed", "zipf")
+    assert not uses_corpus_routing_frequencies("token_routed", "random")
+
+
 def test_run_config_counts_gradient_accumulation_in_effective_token_budget():
     from complexity.training.o200k import build_parser
     from complexity.training.run_config import args_to_run_config

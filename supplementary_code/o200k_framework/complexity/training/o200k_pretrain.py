@@ -85,6 +85,20 @@ def infer_vocab_size(args) -> int:
     return vocab_size
 
 
+def uses_corpus_routing_frequencies(mlp_type: str, routing_strategy: str) -> bool:
+    """Whether a lexical router needs corpus counts to build its lookup tables."""
+
+    lexical_mlp_types = {
+        "token_routed",
+        "sort_split",
+        "sort_split_moe",
+        "deterministic_moe",
+        "complexity",
+    }
+    frequency_aware_strategies = {"zipf", "round_robin", "modulo_balanced_secondary"}
+    return mlp_type.lower() in lexical_mlp_types and routing_strategy.lower() in frequency_aware_strategies
+
+
 def main():
     parser = build_parser()
     args = parse_args_with_yaml_config(parser)
@@ -124,14 +138,20 @@ def main():
         "liger" if args.loss_backend in {"auto", "liger"} and liger_loss_available else "chunked"
     )
     config = make_config(args)
-    if args.dataset == "tokens":
-        config.token_frequencies = token_shard_frequencies(args.tokens_path, config.vocab_size)
+    needs_routing_frequencies = uses_corpus_routing_frequencies(
+        config.mlp_type,
+        config.routing_strategy,
+    )
+    if args.dataset == "tokens" and needs_routing_frequencies:
+        routing_frequencies = token_shard_frequencies(args.tokens_path, config.vocab_size)
+        config.token_frequencies = routing_frequencies
         if is_main:
             logger.info(
-                f"Zipf routing frequencies: {int(config.token_frequencies.sum().item()):,} mmap tokens, "
-                f"{int((config.token_frequencies > 0).sum().item()):,} vocab entries"
+                f"Corpus-derived lexical routing frequencies: "
+                f"{int(routing_frequencies.sum().item()):,} mmap tokens, "
+                f"{int((routing_frequencies > 0).sum().item()):,} vocab entries"
             )
-    elif args.dataset == "text" and not args.no_zipf_from_text:
+    elif args.dataset == "text" and not args.no_zipf_from_text and needs_routing_frequencies:
         config.token_frequencies = text_token_frequencies(
             args.text_file,
             args.tokenizer,
