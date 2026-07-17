@@ -9,6 +9,7 @@ set -euo pipefail
 
 MODE="${MODE:-smoke}"
 SEED="${SEED:-42}"
+TOKENS_PATH="${TOKENS_PATH:-/root/data/fineweb_edu_o200k_1p05b}"
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 export TOKENIZERS_PARALLELISM=false
 
@@ -36,7 +37,14 @@ case "${MODE}" in
     PREFIX="rtxpro2-smoke-s${SEED}"
     ;;
   full)
+    if [[ ! -f "${TOKENS_PATH}/tokens.idx.json" || ! -f "${TOKENS_PATH}/tokens.bin" ]]; then
+      echo "Verified token shard missing at ${TOKENS_PATH}" >&2
+      echo "Run scripts/prepare_fineweb_o200k_shard.py first." >&2
+      exit 3
+    fi
     COMMON_ARGS=(
+      --dataset tokens
+      --tokens-path "${TOKENS_PATH}"
       --tokenizer o200k_base
       --vocab-size 200019
       --steps 954

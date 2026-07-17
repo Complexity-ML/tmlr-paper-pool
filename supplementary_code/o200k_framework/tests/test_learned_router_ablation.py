@@ -205,3 +205,7 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "--loss-backend liger" in text
     assert "--tokenizer o200k_base" in text
     assert "--vocab-size 200019" in text
+    assert "--dataset tokens" in text
+    assert "--tokens-path" in text
+    assert "tokens.idx.json" in text
+    assert "tokens.bin" in text
