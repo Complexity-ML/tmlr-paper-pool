@@ -9,7 +9,7 @@ MODEL="${1:-tr}"
 COMMON=(
   --dataset fineweb
   --tokenizer ./tokenizer-32k
-  --steps 7620
+  --steps 7629
   --batch-size 64
   --seq-len 2048
   --lr 3e-4

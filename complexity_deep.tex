@@ -46,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. The final checkpoints remain close on zero-shot ARC-Easy, PIQA, and HellaSwag, while the routed model has modestly lower WikiText-2 perplexity. A separate learned-router diagnostic reverses its short-budget advantage over dense at a matched 1.0003B-token budget. Replication across seeds remains open.
+Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. The final checkpoints remain close on zero-shot ARC-Easy, PIQA, and HellaSwag, while the routed model has modestly lower WikiText-2 perplexity. A separate learned-router diagnostic reverses its short-budget advantage over dense at a matched 1.0003B-token budget. Replication across seeds remains open.\footnote{Generative AI tools were used as general-purpose assistants for language editing, consistency checks between the manuscript and author-provided CSV/JSON metric files, and figure and revision scripting. The authors reviewed and verified all experimental results, numerical values, scientific claims, and final text, and take full responsibility for the submission.}
 \par
 \end{abstract}
 
@@ -75,7 +75,7 @@ Hash Layers is the closest precedent \citep{roller2021hash}. It showed that fixe
 Shared experts also appear in architectures such as DeepSeekMoE \citep{dai2024deepseekmoe}, where they capture computation common to all tokens. Statistical analyses of shared-expert mixtures provide results under explicit estimation assumptions \citep{nguyen2025sharedexperts}. We use the shared-plus-routed decomposition as an architectural prior; our measurements do not test those theoretical guarantees.
 
 %=============================================================================
-\section{COMPLEXITY-DEEP Architecture}
+\section{Architecture}
 \label{sec:architecture}
 %=============================================================================
 
@@ -85,7 +85,7 @@ The architecture changes only the feed-forward sublayer of a decoder-only transf
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{architecture_complexity_deep.png}
+\includegraphics[width=\textwidth]{architecture_complexity_deep.pdf}
 \caption{Token identity controls only the fixed top-2 lookup. The shared branch and selected residual experts receive the same contextual hidden state.}
 \label{fig:architecture}
 \end{figure}
@@ -197,14 +197,14 @@ We export the final step-7,629 checkpoints to the same BF16 inference runtime an
 
 The token-identity residual model begins behind the dense baseline and crosses it after roughly 0.8B tokens (Figure~\ref{fig:300m_loss_curves}). At the last common evaluation checkpoint, step 7,500 or 7.864B tokens, its evaluation-stream NLL is \textbf{2.9329} versus \textbf{2.9482} for dense, a difference of $-0.0153$. At the final matched training point, step 7,620, training NLL is \textbf{2.9231} versus \textbf{2.9324}. Table~\ref{tab:scaling_300m_result} labels the two metrics explicitly.
 
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
-\caption{Training loss at matched token counts. The token-identity residual model (red) begins behind the dense baseline (blue), crosses after roughly 0.8B tokens, and remains ahead through the end of training.}
+\includegraphics[width=\textwidth]{fig_300m_loss_curves.png}
+\caption{Matched-token loss measurements. Left: training NLL at recorded checkpoints. Right: token-identity residual minus dense NLL on the fixed FineWeb-Edu training-split evaluation stream; negative values favor the token-identity residual model. Markers are recorded checkpoints and lines guide the eye. The evaluation stream is not held out.}
 \label{fig:300m_loss_curves}
 \end{figure}
 
-\begin{table}[!htbp]
+\begin{table}[H]
 \centering
 \small
 \setlength{\tabcolsep}{4pt}
@@ -258,6 +258,8 @@ Token-identity residual & 48.61 & \textbf{63.49} & \textbf{34.06} & \textbf{35.2
 \label{sec:ablation_100m}
 
 Panel A contains seven historical single-seed models of approximately 100M parameters, each trained for 1.0003B tokens on the recorded $2\times$B200 setup. The suite separates the shared branch, the residual branch, and several fixed top-2 assignments. The condition configured for frequency-aware routing contains no populated frequency table and therefore realizes modulo-primary/balanced-secondary lookup. Nominal modulo and round-robin controls have equivalent primary assignments in this setup, so differences between those rows are descriptive rather than causal.
+
+The train/evaluation step difference in the following panels reflects the recorded logging schedule, not a cross-checkpoint substitution. The 1B-token runs have a 954-step budget, log training metrics every 10 steps, and evaluate every 750 steps; step 950 is therefore their last common logged training point and step 750 their last common evaluation checkpoint. The short runs end at step 95, log training metrics every five steps, and evaluate every 75 steps, yielding the analogous step-95/step-75 pair.
 
 \begin{table}[H]
 \centering
@@ -330,7 +332,7 @@ At step 750, expert traffic is 0.2400/0.2533/0.2610/0.2457 with no dead expert, 
 
 The result shows that a fixed token ID can select a useful residual parameter subspace in one matched run pair. It does not show that token IDs encode semantic expert classes. The assignments are modulo partitions up to a layer-specific permutation, and the selected experts transform contextual hidden states. A plausible interpretation is that stable token-conditioned capacity changes which functions are available to recurring lexical items while the shared MLP and attention preserve common contextual processing.
 
-The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, but its matched dense control is ahead at 1B tokens while the promoted router completes without dead experts. These panels use one seed, another tokenizer/shard, and different hardware from the historical panel. They therefore compare learned routing with dense computation on one setup without establishing that learned or fixed routing is generally superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
+The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, but its matched dense control is ahead at 1B tokens while the promoted router completes without dead experts. Panels B and C use one seed and the same o200k tokenizer family as Panel A, but a different data shard and ingestion pipeline, implementation snapshot, and hardware. They therefore compare learned routing with dense computation on one setup without establishing that learned or fixed routing is generally superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
 
 The 300M comparison uses one seed per architecture, and its fixed loss-evaluation stream comes from the training split. The standard zero-shot panel is limited to three relatively simple multiple-choice tasks and WikiText-2; its accuracy gaps are smaller than one reported standard error and it does not replace broader out-of-distribution evaluation or multi-seed replication. The routed implementation is slower than dense at matched batch. Finally, the stored lookup buffers realize the modulo-primary/cardinality-balanced-secondary rule, not frequency-aware assignment. These limits leave the central observation intact but constrain its scope.
 

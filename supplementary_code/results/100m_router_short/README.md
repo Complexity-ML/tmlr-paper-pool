@@ -28,4 +28,4 @@ Reconstruct the paper rows with:
 python supplementary_code/scripts/summarize_100m_router_short.py
 ```
 
-The short panel is a promotion diagnostic. It must not be compared numerically with the historical 1B-token/B200 panel, which used a different tokenizer, data stream, token budget, and hardware.
+The short panel is a promotion diagnostic. It uses the same o200k tokenizer family as the historical 1B-token/B200 panel, but must not be compared numerically with it because the data ingestion and evaluation streams, token budget, hardware, and implementation snapshot differ.

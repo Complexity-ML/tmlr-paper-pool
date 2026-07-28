@@ -46,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par une table fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL sur le flux d'\'{e}valuation de 2,9329 contre 2,9482 pour la baseline dense au dernier checkpoint d'\'{e}valuation commun. Ce flux provient du split d'entra\^{i}nement et l'impl\'{e}mentation rout\'{e}e est plus lente. Les checkpoints finaux restent proches sur ARC-Easy, PIQA et HellaSwag en zero-shot, tandis que le mod\`{e}le rout\'{e} obtient une perplexit\'{e} WikiText-2 modestement inf\'{e}rieure. Un diagnostic s\'{e}par\'{e} de routeur appris inverse son avantage au budget court face au dense \`{a} un budget appari\'{e} de 1,0003B tokens. La r\'{e}plication multi-seed reste ouverte.
+Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par une table fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL sur le flux d'\'{e}valuation de 2,9329 contre 2,9482 pour la baseline dense au dernier checkpoint d'\'{e}valuation commun. Ce flux provient du split d'entra\^{i}nement et l'impl\'{e}mentation rout\'{e}e est plus lente. Les checkpoints finaux restent proches sur ARC-Easy, PIQA et HellaSwag en zero-shot, tandis que le mod\`{e}le rout\'{e} obtient une perplexit\'{e} WikiText-2 modestement inf\'{e}rieure. Un diagnostic s\'{e}par\'{e} de routeur appris inverse son avantage au budget court face au dense \`{a} un budget appari\'{e} de 1,0003B tokens. La r\'{e}plication multi-seed reste ouverte.\footnote{Des outils d'IA g\'{e}n\'{e}rative ont \'{e}t\'{e} utilis\'{e}s comme assistants g\'{e}n\'{e}raux pour la r\'{e}vision linguistique, les contr\^{o}les de coh\'{e}rence entre le manuscrit et les fichiers de m\'{e}triques CSV/JSON fournis par les auteurs, ainsi que les scripts de figures et de r\'{e}vision. Les auteurs ont relu et v\'{e}rifi\'{e} l'ensemble des r\'{e}sultats exp\'{e}rimentaux, valeurs num\'{e}riques, affirmations scientifiques et le texte final, et assument l'enti\`{e}re responsabilit\'{e} de la soumission.}
 \par
 \end{abstract}
 
@@ -75,7 +75,7 @@ Hash Layers est le pr\'{e}c\'{e}dent le plus proche \citep{roller2021hash}. Ce t
 Des experts partag\'{e}s apparaissent aussi dans DeepSeekMoE \citep{dai2024deepseekmoe}, o\`{u} ils capturent le calcul commun \`{a} tous les tokens. Des analyses statistiques des m\'{e}langes \`{a} experts partag\'{e}s fournissent des r\'{e}sultats sous des hypoth\`{e}ses d'estimation explicites \citep{nguyen2025sharedexperts}. Nous utilisons cette d\'{e}composition comme prior architectural ; nos mesures ne testent pas ces garanties th\'{e}oriques.
 
 %=============================================================================
-\section{Architecture COMPLEXITY-DEEP}
+\section{Architecture}
 \label{sec:architecture}
 %=============================================================================
 
@@ -85,7 +85,7 @@ L'architecture ne modifie que la sous-couche feed-forward d'un transformer decod
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{architecture_complexity_deep.png}
+\includegraphics[width=\textwidth]{architecture_complexity_deep.pdf}
 \caption{L'identit\'{e} du token contr\^{o}le uniquement le lookup top-2 fixe. La branche partag\'{e}e et les experts r\'{e}siduels s\'{e}lectionn\'{e}s re\c{c}oivent le m\^{e}me \'{e}tat cach\'{e} contextuel.}
 \label{fig:architecture}
 \end{figure}
@@ -198,14 +198,14 @@ Nous exportons les checkpoints finaux du step 7 629 vers le m\^{e}me runtime d'i
 
 Le mod\`{e}le \`{a} r\'{e}siduel token-identity commence derri\`{e}re la baseline dense et la croise apr\`{e}s environ 0,8B tokens (Figure~\ref{fig:300m_loss_curves}). Au dernier checkpoint d'\'{e}valuation commun, step 7 500 ou 7,864B tokens, sa NLL sur le flux d'\'{e}valuation est de \textbf{2,9329} contre \textbf{2,9482} pour dense, soit un \'{e}cart de $-0,0153$. Au dernier point train appari\'{e}, step 7 620, la NLL d'entra\^{i}nement est de \textbf{2,9231} contre \textbf{2,9324}. La Table~\ref{tab:scaling_300m_result} identifie explicitement les deux m\'{e}triques.
 
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.9\textwidth]{fig_300m_loss_curves.png}
-\caption{Perte d'entra\^{i}nement \`{a} nombres de tokens appari\'{e}s. Le mod\`{e}le \`{a} r\'{e}siduel token-identity (rouge) commence derri\`{e}re la baseline dense (bleu), la croise apr\`{e}s environ 0,8B tokens et reste devant jusqu'\`{a} la fin.}
+\includegraphics[width=\textwidth]{fig_300m_loss_curves.png}
+\caption{Mesures de perte \`{a} nombres de tokens appari\'{e}s. \`{A} gauche : NLL d'entra\^{i}nement aux checkpoints consign\'{e}s. \`{A} droite : NLL du r\'{e}siduel token-identity moins celle du mod\`{e}le dense sur le flux fixe du split train FineWeb-Edu ; les valeurs n\'{e}gatives favorisent le r\'{e}siduel token-identity. Les marqueurs sont les checkpoints consign\'{e}s et les lignes servent de guide visuel. Le flux d'\'{e}valuation n'est pas held-out.}
 \label{fig:300m_loss_curves}
 \end{figure}
 
-\begin{table}[!htbp]
+\begin{table}[H]
 \centering
 \caption{NLL d'entra\^{i}nement et du flux d'\'{e}valuation aux m\^{e}mes nombres de tokens. La ligne d'\'{e}valuation utilise le flux fixe du split train FineWeb-Edu ; les autres lignes sont des mesures d'entra\^{i}nement.}
 \label{tab:scaling_300m_result}
@@ -256,6 +256,8 @@ R\'{e}siduel token-identity & 48,61 & \textbf{63,49} & \textbf{34,06} & \textbf{
 \label{sec:ablation_100m}
 
 Le panneau A contient sept mod\`{e}les historiques d'environ 100M param\`{e}tres, chacun entra\^{i}n\'{e} sur 1,0003B tokens avec une graine unique sur la configuration $2\times$B200 consign\'{e}e. La suite s\'{e}pare la branche partag\'{e}e, la branche r\'{e}siduelle et plusieurs assignations top-2 fixes. La condition configur\'{e}e pour le routage frequency-aware ne contient aucune table de fr\'{e}quences remplie et r\'{e}alise donc un lookup modulo-primaire/secondaire \'{e}quilibr\'{e}. Les contr\^{o}les modulo et round-robin ont les m\^{e}mes assignations primaires dans ce protocole ; leurs diff\'{e}rences sont descriptives, pas causales.
+
+La diff\'{e}rence entre les steps train et \'{e}valuation des panneaux suivants refl\`{e}te le calendrier de logging enregistr\'{e}, et non une substitution entre checkpoints. Les runs \`{a} 1B tokens ont un budget de 954 steps, consignent les m\'{e}triques train tous les dix steps et sont \'{e}valu\'{e}s tous les 750 steps : le step 950 est donc leur dernier point train commun consign\'{e} et le step 750 leur dernier checkpoint d'\'{e}valuation commun. Les runs courts s'arr\^{e}tent au step 95, consignent les m\'{e}triques train tous les cinq steps et sont \'{e}valu\'{e}s tous les 75 steps, ce qui produit la paire analogue step 95/step 75.
 
 \begin{table}[H]
 \centering
@@ -328,7 +330,7 @@ Au step 750, le trafic expert vaut 0,2400/0,2533/0,2610/0,2457, aucun expert n'e
 
 Le r\'{e}sultat montre qu'un ID fixe peut s\'{e}lectionner un sous-espace de param\`{e}tres r\'{e}siduels utile dans une paire de runs appari\'{e}s. Il ne montre pas que les IDs d\'{e}finissent des classes expertes s\'{e}mantiques. Les assignations sont des partitions modulo \`{a} une permutation propre \`{a} chaque couche pr\`{e}s, et les experts s\'{e}lectionn\'{e}s transforment des \'{e}tats cach\'{e}s contextuels. Une interpr\'{e}tation possible est qu'une capacit\'{e} stable conditionn\'{e}e par token modifie les fonctions disponibles pour les \'{e}l\'{e}ments lexicaux r\'{e}currents, tandis que le MLP partag\'{e} et l'attention conservent le traitement contextuel commun.
 
-L'exp\'{e}rience n'isole pas non plus l'identit\'{e} du token de toutes les explications alternatives. Les ablations 100M de la Section~\ref{sec:ablation_100m} incluent des contr\^{o}les r\'{e}siduels, al\'{e}atoires et contextuels appris. Le panneau court favorise l'\'{e}quilibrage auxiliaire, mais son contr\^{o}le dense appari\'{e} passe devant \`{a} 1B tokens tandis que le routeur promu termine sans expert mort. Ces panneaux utilisent une graine, un autre tokenizer/shard et un autre mat\'{e}riel que le panneau historique. Ils comparent donc le routage appris au calcul dense sur une configuration sans \'{e}tablir la sup\'{e}riorit\'{e} g\'{e}n\'{e}rale du routage appris ou fixe. Les contr\^{o}les fixes historiques ne permettent pas non plus un classement causal des assignations car certains contr\^{o}les nominaux r\'{e}alisent les m\^{e}mes assignations primaires.
+L'exp\'{e}rience n'isole pas non plus l'identit\'{e} du token de toutes les explications alternatives. Les ablations 100M de la Section~\ref{sec:ablation_100m} incluent des contr\^{o}les r\'{e}siduels, al\'{e}atoires et contextuels appris. Le panneau court favorise l'\'{e}quilibrage auxiliaire, mais son contr\^{o}le dense appari\'{e} passe devant \`{a} 1B tokens tandis que le routeur promu termine sans expert mort. Les panneaux B et C utilisent une graine et la m\^{e}me famille de tokenizer o200k que le panneau A, mais un shard et un pipeline d'ingestion diff\'{e}rents, un autre snapshot de l'impl\'{e}mentation et un autre mat\'{e}riel. Ils comparent donc le routage appris au calcul dense sur une configuration sans \'{e}tablir la sup\'{e}riorit\'{e} g\'{e}n\'{e}rale du routage appris ou fixe. Les contr\^{o}les fixes historiques ne permettent pas non plus un classement causal des assignations car certains contr\^{o}les nominaux r\'{e}alisent les m\^{e}mes assignations primaires.
 
 La comparaison 300M utilise une graine par architecture et son flux fixe d'\'{e}valuation de perte vient du split train. Le panneau zero-shot standard est limit\'{e} \`{a} trois t\^{a}ches \`{a} choix multiples relativement simples et WikiText-2 ; ses \'{e}carts d'accuracy sont inf\'{e}rieurs \`{a} une erreur standard et il ne remplace ni une \'{e}valuation OOD plus large ni une r\'{e}plication multi-seed. L'impl\'{e}mentation rout\'{e}e est plus lente que dense au m\^{e}me batch. Enfin, les buffers de lookup sauvegard\'{e}s r\'{e}alisent la r\`{e}gle modulo-primary/secondary-balanced par cardinalit\'{e}, et non une assignation d\'{e}pendant des fr\'{e}quences. Ces limites pr\'{e}servent l'observation centrale mais en restreignent la port\'{e}e.
 

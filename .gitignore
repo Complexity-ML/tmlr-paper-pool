@@ -28,3 +28,8 @@ Thumbs.db
 # Python cache
 __pycache__/
 *.pyc
+
+# Local experiment and rendering outputs
+tmp/
+supplementary_code/o200k_framework/checkpoints/
+supplementary_code/o200k_framework/runs/

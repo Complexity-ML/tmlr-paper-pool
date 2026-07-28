@@ -1,0 +1,42 @@
+\documentclass[10pt]{letter}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+
+\signature{Corresponding author: [NAME]\\
+Affiliation: [INSTITUTION]\\
+Address: [POSTAL ADDRESS]\\
+Email: [EMAIL]}
+\address{[AUTHOR ACTION REQUIRED: corresponding author's address]}
+
+\begin{document}
+\setlength{\parskip}{0.25em}
+
+\begin{letter}{Editors\\Nature Machine Intelligence}
+\opening{Dear Editors,}
+
+Please consider our Article, ``Token identity provides a fixed routing signal for residual experts in language models'', for publication in \emph{Nature Machine Intelligence}.
+
+Mixture-of-experts language models generally learn a context-dependent router, making it difficult to separate conditional capacity from the routing decision. We present a controlled alternative in which every token retains a shared contextual MLP while token identity selects only a narrow residual path. In a parameter- and token-matched single-seed comparison at 306.5 million parameters and 8 billion training tokens, fixed token routing finishes with lower evaluation-stream negative log-likelihood than dense computation. The final checkpoints remain near parity on three zero-shot tasks and show modestly lower WikiText-2 perplexity, although the routed implementation trains more slowly. A separate learned contextual router leads dense at short budget but trails its matched dense control at 1 billion tokens.
+
+We believe this result will interest the journal's broad machine-learning readership because it separates two usually coupled components of MoE systems. The finding does not claim that fixed routing is universally superior; it shows that stable token identity can allocate useful residual capacity when a shared path preserves contextual computation. The manuscript makes its single-seed and efficiency limits explicit and includes reproducible source artifacts.
+
+The manuscript is submitted for double-anonymized peer review. Author names, affiliations and contribution statements are listed below and have been omitted from the reviewer manuscript.
+
+\textbf{Authors and affiliations:} [AUTHOR ACTION REQUIRED: list every author, primary affiliation, current address if applicable, and ORCID.]\par
+\textbf{Author contributions:} [AUTHOR ACTION REQUIRED: provide a CRediT-style statement.]\par
+\textbf{Competing interests:} [AUTHOR ACTION REQUIRED: confirm that none exist or provide the complete declaration.]\par
+\textbf{Related manuscripts:} [AUTHOR ACTION REQUIRED: confirm that the overlapping TMLR submission has been withdrawn or finally decided before Nature submission, and disclose any related manuscript under consideration or in press.]\par
+\textbf{Prior editorial discussions:} [AUTHOR ACTION REQUIRED: state whether any discussion with a Nature Machine Intelligence editor occurred.]
+
+Generative artificial-intelligence tools assisted language editing, consistency checks against author-provided CSV/JSON metric files, and figure and revision scripting; the authors verified all results, numerical values, scientific claims and final text, take full responsibility, and disclose this use in Methods.
+
+Thank you for considering our manuscript.
+
+\closing{Sincerely,}
+\end{letter}
+
+\end{document}

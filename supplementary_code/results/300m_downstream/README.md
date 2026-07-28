@@ -14,6 +14,6 @@ This directory contains the reviewer-facing aggregate results for the final matc
 - reported multiple-choice metric: `acc_norm`;
 - WikiText-2 metric: word perplexity.
 
-The exact evaluation and export scripts are in `benchmarks/pacific_300m` of `Complexity-ML/vllm-cuda_graph` at commit `f272edabc`. The published wheel has SHA-256 `81ea56c3d2eaa671f57755efd633d95a219e0960b1964ae70d13fe5a605921b3`.
+The evaluation used the recorded CUDA-graph inference wheel with SHA-256 `81ea56c3d2eaa671f57755efd633d95a219e0960b1964ae70d13fe5a605921b3`. The exact evaluation and export scripts are retained in the blinded reviewer artifact and will be released after review.
 
 `summary.csv` is the compact table source. `aggregated_results.json` retains task sizes, point estimates, standard errors, package versions, and model hashes. The full per-example LM Harness outputs, execution logs, model export metadata, and sanity generations were retained in the local archive `reviewer-bench-artifacts-20260717.tar.gz` (SHA-256 `9fc95fd41f6067e32ec8ff295ac210732941689d087f9689c517b863dc8d386e`). They are not committed because the logged per-example files are approximately 100 MB and are reproducible from the public scripts and checkpoints.

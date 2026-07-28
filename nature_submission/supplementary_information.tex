@@ -1,0 +1,138 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=2.4cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{float}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+
+\setlength{\emergencystretch}{2em}
+\title{Supplementary Information\\Token identity provides a fixed routing signal for residual experts in language models}
+\author{Anonymous authors}
+\date{}
+
+\begin{document}
+\maketitle
+\renewcommand{\tablename}{Supplementary Table}
+
+\section*{Supplementary Methods}
+
+\subsection*{Scope of the control suites}
+
+The reported control experiments are organized into three internally matched panels. All use the same o200k tokenizer family, but absolute losses must not be compared between the historical and contextual implementations because their data ingestion and evaluation streams, hardware and implementation snapshots differ. Panel A is the historical fixed-routing suite on two NVIDIA B200 GPUs. Panel B is a four-condition 99.6-million-token contextual-router diagnostic on two NVIDIA RTX PRO 6000 Blackwell GPUs. Panel C promotes the auxiliary-balanced router to a matched 1.0003-billion-token comparison with dense on the same contextual setup. Every reported row contains one training seed.
+
+Panel A's historical label for a frequency-aware condition was inspected against its realized configuration and checkpoint. No frequency table was populated. The condition therefore implements modulo-primary/cardinality-balanced-secondary routing and is named accordingly here. Likewise, nominal modulo-adjacent and round-robin variants share the same primary assignment in this implementation; their numerical difference is not evidence for a causal difference between primary assignment rules.
+
+Panels B and C use learned contextual routers that score four residual experts from each token's hidden state and select two. Panel B compares auxiliary load balancing, loss-free bias balancing, dense computation and a fixed token-identity control. Panel C promotes only the auxiliary-balanced router. Reported training NLL excludes the auxiliary loss. These controls were not subjected to the four-task downstream panel; no downstream-performance claim is made for them.
+
+\subsection*{Metric selection}
+
+For the primary comparison, the manuscript reports point measurements at matched token counts and the last common evaluation step. It does not use the historical mean over the last 50 logged training steps. Evaluation-stream NLL is separated from training NLL in every table. Because the stream was sampled from the training split, it is not described as validation or held-out loss.
+
+The 1-billion-token controls have a 954-step budget, log training metrics every ten steps and evaluate every 750 steps. Step 950 is therefore the last common logged training point and step 750 the last common evaluation checkpoint; the table does not substitute one quantity for the other. The short diagnostic ends at step 95, logs training metrics every five steps and evaluates every 75 steps, yielding the analogous step-95/step-75 pair.
+
+Multiple-choice results use length-normalized accuracy. Standard errors are those returned by LM Evaluation Harness. WikiText-2 word perplexity is reported without a harness-provided standard error. No post-hoc benchmark selection or sample truncation was used.
+
+\section*{Supplementary Results}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{Complete historical fixed-routing suite.} Approximately 100 million parameters, 1.0003 billion tokens and two NVIDIA B200 GPUs. Evaluation NLL uses the suite's fixed FineWeb-Edu training-split stream. Throughput is comparable only within this table.}
+\label{tab:s1}
+\begin{tabular}{lrrr}
+\toprule
+Variant & Train NLL @ 950 & Eval. NLL @ 750 & Tokens s$^{-1}$ \\
+\midrule
+Balanced secondary + shared & \textbf{4.8205} & \textbf{4.8887} & 321k \\
+Dense residual & 4.8244 & 4.8958 & 397k \\
+Modulo-adjacent top-2 + shared & 4.8320 & 4.9016 & 321k \\
+Round-robin top-2 + shared & 4.8384 & 4.9072 & 321k \\
+Random top-2 + shared & 4.8875 & 4.9577 & 318k \\
+Shared only & 4.9285 & 5.0012 & \textbf{402k} \\
+Balanced secondary, no shared & 4.9693 & 5.0393 & 334k \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{Short-budget contextual-router diagnostic.} Four matched runs, approximately 98.2 million parameters, 99.6 million tokens and two NVIDIA RTX PRO 6000 Blackwell GPUs. Training NLL excludes any auxiliary term. Values are not comparable with Supplementary Table 1.}
+\label{tab:s2}
+\begin{tabular}{lrrrr}
+\toprule
+Variant & Parameters & Train NLL @ 95 & Eval. NLL @ 75 & $\Delta$ versus dense \\
+\midrule
+Learned top-2 + auxiliary balancing & 98.213M & \textbf{7.4655} & \textbf{7.5647} & $\mathbf{-0.0119}$ \\
+Dense residual & 98.197M & 7.4734 & 7.5766 & 0 \\
+Learned top-2 + loss-free balancing & 98.213M & 7.5072 & 7.6052 & $+0.0286$ \\
+Fixed token-identity top-2 + shared & 98.197M & 7.5310 & 7.6273 & $+0.0507$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{Full-budget contextual-router control.} Matched auxiliary-balanced and dense runs, approximately 98.2 million parameters, 1.0003 billion tokens and two NVIDIA RTX PRO 6000 Blackwell GPUs. Training NLL excludes the auxiliary term. Values are not comparable with Supplementary Table 1.}
+\label{tab:s3}
+\begin{tabular}{lrrrr}
+\toprule
+Variant & Parameters & Train NLL @ 950 & Eval. NLL @ 750 & Tokens s$^{-1}$ \\
+\midrule
+Dense residual & 98.197M & \textbf{4.7849} & \textbf{4.8433} & \textbf{100k} \\
+Learned top-2 + auxiliary balancing & 98.213M & 4.7909 & 4.8580 & 95k \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At short budget, auxiliary balancing improves evaluation NLL by 0.0119 over dense, while loss-free learned routing and fixed token-identity routing remain behind. In the full-budget panel, learned-router expert traffic is 0.2400, 0.2533, 0.2610 and 0.2457, with no inactive expert; the auxiliary term is 0.0100. Dense has 0.0147 lower evaluation NLL and approximately 5.2\% higher throughput. The auxiliary router's short-budget advantage therefore does not persist to 1 billion tokens in this single-seed pair.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{Complete standard-evaluation record.} Accuracy is a fraction rather than a percentage in this table. Standard errors are reported for the three multiple-choice tasks.}
+\label{tab:s4}
+\begin{tabular}{llrrr}
+\toprule
+Task & Model & Samples & Estimate & Standard error \\
+\midrule
+ARC-Easy, \texttt{acc\_norm} & Dense & 2,376 & \textbf{0.490741} & 0.010258 \\
+& Token-identity residual & 2,376 & 0.486111 & 0.010256 \\
+PIQA, \texttt{acc\_norm} & Dense & 1,838 & \textbf{0.634929} & 0.011233 \\
+& Token-identity residual & 1,838 & \textbf{0.634929} & 0.011233 \\
+HellaSwag, \texttt{acc\_norm} & Dense & 10,042 & 0.336686 & 0.004716 \\
+& Token-identity residual & 10,042 & \textbf{0.340570} & 0.004729 \\
+WikiText-2, word PPL & Dense & --- & 35.785143 & --- \\
+& Token-identity residual & --- & \textbf{35.196184} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Reproducibility checklist}
+
+The anonymized source package contains:
+\begin{itemize}
+  \item the primary and control model implementations;
+  \item realized JSON run configurations and raw CSV metrics;
+  \item the exact 32,000-entry tokenizer used by the primary checkpoints;
+  \item the o200k shard-preparation script and control configurations;
+  \item unit tests for route construction, expert selection and capacity accounting;
+  \item scripts that regenerate the manuscript figures and aggregate tables; and
+  \item downstream aggregate results with package versions and evaluation seeds.
+\end{itemize}
+
+Large checkpoints and per-example benchmark logs are excluded from the compact manuscript archive but are available to editors and reviewers. The technical artifact manifest supplied with the code records checkpoint provenance; these implementation details are intentionally omitted from the paper itself.
+
+\end{document}
