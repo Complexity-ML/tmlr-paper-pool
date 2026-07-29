@@ -9,7 +9,7 @@ DIST_DIR="${REPO_ROOT}/dist"
 
 PDFLATEX="${PDFLATEX:-$(command -v pdflatex || true)}"
 BIBTEX="${BIBTEX:-$(command -v bibtex || true)}"
-DOT="${DOT:-$(command -v dot || true)}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
 
 if [[ -z "${PDFLATEX}" && -x /Library/TeX/texbin/pdflatex ]]; then
   PDFLATEX=/Library/TeX/texbin/pdflatex
@@ -17,7 +17,7 @@ fi
 if [[ -z "${BIBTEX}" && -x /Library/TeX/texbin/bibtex ]]; then
   BIBTEX=/Library/TeX/texbin/bibtex
 fi
-for tool in PDFLATEX BIBTEX DOT; do
+for tool in PDFLATEX BIBTEX PYTHON_BIN; do
   if [[ -z "${!tool}" ]]; then
     echo "missing required tool: ${tool}" >&2
     exit 1
@@ -30,11 +30,12 @@ if grep -Eq '\[AUTHOR ACTION REQUIRED|\[NAME\]|\[EMAIL\]|\[INSTITUTION\]|\[POSTA
 fi
 
 mkdir -p "${BUILD_ROOT}/manuscript" "${BUILD_ROOT}/supplement" \
-  "${BUILD_ROOT}/cover" "${PDF_DIR}" "${DIST_DIR}"
+  "${BUILD_ROOT}/cover" "${BUILD_ROOT}/matplotlib" "${PDF_DIR}" "${DIST_DIR}"
 
-"${DOT}" -Tpdf \
-  "${REPO_ROOT}/supplementary_code/scripts/architecture_complexity_deep.dot" \
-  -o "${REPO_ROOT}/supplementary_code/figures/architecture_complexity_deep.pdf"
+MPLCONFIGDIR="${BUILD_ROOT}/matplotlib" \
+  "${PYTHON_BIN}" "${REPO_ROOT}/supplementary_code/scripts/render_verified_architecture.py"
+MPLCONFIGDIR="${BUILD_ROOT}/matplotlib" \
+  "${PYTHON_BIN}" "${REPO_ROOT}/supplementary_code/scripts/render_300m_scaling_figure.py"
 
 cd "${NATURE_DIR}"
 "${PDFLATEX}" -interaction=nonstopmode -halt-on-error \
@@ -92,6 +93,10 @@ rsync -a \
   "${REPO_ROOT}/supplementary_code/" "${STAGE_DIR}/supplementary_code/"
 mkdir -p "${STAGE_DIR}/supplementary_code/figures"
 cp "${REPO_ROOT}/supplementary_code/figures/architecture_complexity_deep.pdf" \
+  "${STAGE_DIR}/supplementary_code/figures/"
+cp "${REPO_ROOT}/supplementary_code/figures/architecture_complexity_deep.png" \
+  "${STAGE_DIR}/supplementary_code/figures/"
+cp "${REPO_ROOT}/supplementary_code/figures/fig_300m_loss_curves.pdf" \
   "${STAGE_DIR}/supplementary_code/figures/"
 cp "${REPO_ROOT}/supplementary_code/figures/fig_300m_loss_curves.png" \
   "${STAGE_DIR}/supplementary_code/figures/"

@@ -1,12 +1,13 @@
 # Nature Machine Intelligence submission edition
 
-This directory is a separate, double-anonymized Nature Machine Intelligence edition. It does not replace or modify the TMLR manuscript.
+This directory is the separate, double-anonymized Nature Machine Intelligence formatting of the study. The scientific results and routing description are kept synchronized with the TMLR manuscript.
 
 ## Files
 
 - `manuscript.tex`: Article manuscript, including Methods and editorial declarations.
-- `supplementary_information.tex`: detailed controls, downstream statistics, hashes and reproducibility information.
+- `supplementary_information.tex`: detailed controls, downstream and independent-corpus statistics, hashes and reproducibility information.
 - `cover_letter.tex`: editorial cover letter with explicit author-only placeholders.
+- `editorial_readiness.md`: current format audit, blockers and evidence-risk assessment.
 - `nature_references.bib`: compact bibliography used by the Nature manuscript.
 - `output/pdf/`: compiled PDFs after a successful build.
 
@@ -38,3 +39,7 @@ cp output/build/cover/cover_letter.pdf output/pdf/
 ## Format checks
 
 The source is designed as an initial Article submission: an abstract below 150 words, unheaded introduction, Results, Discussion and Methods, and no more than six main display items. Nature Machine Intelligence does not require a journal-specific LaTeX template for initial submission.
+
+The eight-page manuscript length is an internal project constraint. The journal's
+current Article rule is a 3,500-word main-text limit rather than an eight-page
+limit. Nature Machine Intelligence does not accept presubmission enquiries.

@@ -13,8 +13,12 @@ Every token traverses a shared dense SwiGLU branch. A fixed layer-specific token
 - one seed per architecture
 - fixed evaluation stream drawn from the training split
 - slower routed training throughput in the reported implementation
+- C4 validation NLL: routed 3.4066 versus dense 3.4161
+- Pile test-subset NLL: routed 2.8769 versus dense 2.8690
 
-The result is a matched-run observation, not evidence of statistical significance or general superiority over dense or learned routing.
+The result is a matched-run observation. C4 and WikiText-2 favour routing while
+The Pile subset favours dense, so the measured effect is corpus dependent rather
+than evidence of general superiority over dense or learned routing.
 
 ## Explore and reproduce
 

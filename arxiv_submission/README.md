@@ -9,6 +9,7 @@ The preprint keeps:
 - the matched 306.5M / 8B-token comparison;
 - C4 and Pile independent-corpus NLL;
 - the recent parameter-matched Apple-MPS GQA/MHA pilots;
+- direct learned contextual-router controls for the GQA/MHA pilots;
 - explicit limitations and reproducibility links.
 
 It omits the long reviewer-oriented discussion and historical ablation panels

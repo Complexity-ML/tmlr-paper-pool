@@ -46,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches evaluation-stream NLL 2.9329 versus 2.9482 for the dense baseline at the last common evaluation checkpoint. This stream is drawn from the training split, and the routed implementation is slower. The final checkpoints remain close on zero-shot ARC-Easy, PIQA, and HellaSwag, while the routed model has modestly lower WikiText-2 perplexity. A separate learned-router diagnostic reverses its short-budget advantage over dense at a matched 1.0003B-token budget. Replication across seeds remains open.\footnote{Generative AI tools were used as general-purpose assistants for language editing, consistency checks between the manuscript and author-provided CSV/JSON metric files, and figure and revision scripting. The authors reviewed and verified all experimental results, numerical values, scientific claims, and final text, and take full responsibility for the submission.}
+Learned mixture-of-experts routers use contextual hidden states to decide which parameters process each token. We ask how much of that routing signal can come from token identity alone when expert capacity is a small residual over a shared dense MLP. Our model maps each token ID to two narrow experts through a fixed, layer-specific lookup; the experts still transform the same contextual hidden state as the shared branch. In a matched single-seed comparison between 306.5M-parameter models trained on 8B FineWeb-Edu tokens, the token-routed model reaches diagnostic-stream NLL 2.9329 versus 2.9482 for dense, although the stream comes from the training split and routing is slower. Final checkpoints remain close on three zero-shot tasks. The routed model has lower WikiText-2 perplexity and C4-validation NLL, whereas dense has lower NLL on a Pile test subset. A learned-router diagnostic also changes ordering between short and 1.0003B-token budgets. The observed effect is therefore modest and corpus dependent; replication across seeds remains open.\footnote{Generative AI tools were used as general-purpose assistants for language editing, consistency checks between the manuscript and author-provided CSV/JSON metric files, and figure and revision scripting. The authors reviewed and verified all experimental results, numerical values, scientific claims, and final text, and take full responsibility for the submission.}
 \par
 \end{abstract}
 
@@ -61,7 +61,7 @@ We test this idea in a deliberately asymmetric design. Every token passes throug
 
 The primary comparison uses two 306.5M-parameter models trained for the same 8B-token budget. The models share their transformer backbone and stored MLP width; one uses a dense width of 4,096, while the other divides that width into a shared width of 3,840 and four routed experts of width 64, with two active per token. At the last common checkpoint of a fixed evaluation stream, the routed model reaches NLL 2.9329 and the dense model 2.9482. The routed model trains more slowly in the current implementation, and the evaluation stream comes from the FineWeb-Edu training split.
 
-This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing tables and capacity accounting, and reports the full matched-token trajectory and a zero-shot evaluation of the final checkpoints. We also report a separate learned-router diagnostic with matched dense and fixed token-identity controls at short budget, followed by a 1B-token learned-router/dense comparison.
+This study contributes a controlled observation rather than a general verdict on expert routing. It defines a shared-plus-residual architecture in which token identity controls only expert selection, verifies the realized routing and capacity accounting, and reports the full matched-token trajectory, standard tasks, and two independent-corpus NLL measurements. We also report a separate learned-router diagnostic with matched dense and fixed token-identity controls at short budget, followed by a 1B-token learned-router/dense comparison.
 
 %=============================================================================
 \section{Related Work}
@@ -98,13 +98,12 @@ Each layer stores a fixed top-2 lookup. The primary expert is a seeded permutati
 r_{l,1}(t)=\pi_l(t \bmod E), \qquad E=4.
 \label{eq:routing}
 \end{equation}
-The secondary table is constructed once, in ascending token-ID order, by selecting the least-used expert other than the primary:
+The second expert is the cyclic successor of the primary:
 \begin{equation}
-r_{l,2}(t)=\operatorname*{arg\,min}_{e\neq r_{l,1}(t)}
-\sum_{u=0}^{t-1}\mathbb{1}[r_{l,2}(u)=e],
+r_{l,2}(t)=\bigl(r_{l,1}(t)+1\bigr)\bmod E,
 \label{eq:secondary_routing}
 \end{equation}
-with lowest-index tie breaking. Because the 32,000-token vocabulary is divisible by four, each expert receives exactly 8,000 primary token IDs. This balances vocabulary cardinality, not corpus traffic.
+Because the 32,000-token vocabulary is divisible by four, each expert receives exactly 8,000 primary and 8,000 secondary token IDs. This balances vocabulary cardinality, not corpus traffic.
 
 \subsection{Shared MLP and residual experts}
 
@@ -113,7 +112,7 @@ For contextual hidden state $\mathbf{x}$ and token ID $t$, the feed-forward outp
 \operatorname{MLP}_l(\mathbf{x},t)=g^s_l\operatorname{Shared}_l(\mathbf{x})+g^r_l\!\sum_{j=1}^{2}0.5\,\operatorname{Expert}_{r_{l,j}(t)}(\mathbf{x}),
 \label{eq:mlp_routed}
 \end{equation}
-where $g^s_l$ and $g^r_l$ are learned scalar gates initialized to $1.0$ and $0.1$. The selected expert outputs use fixed weights $0.5/0.5$. Every branch is a SwiGLU transformation,
+where $g^s_l$ and $g^r_l$ are learned scalar gates initialized to $0.5$ and $0.5$. The selected expert outputs use fixed weights $0.5/0.5$. Every branch is a SwiGLU transformation,
 \begin{equation}
 \text{Expert}_i(\mathbf{x}) = (\text{SiLU}(\mathbf{x}\mathbf{W}^i_{gate}) \odot \mathbf{x}\mathbf{W}^i_{up})\mathbf{W}^i_{down}
 \label{eq:expert}
@@ -153,7 +152,7 @@ Routed intermediate dimension & 256 total & --- \\
 Expert intermediate & 64 & --- \\
 Shared expert intermediate & 3840 & --- \\
 Experts ($n_{experts}$) & 4, top-$k=2$ & 1 (dense) \\
-Shared/routed gate initialization & 1.0 / 0.1 & --- \\
+Shared/routed gate initialization & 0.5 / 0.5 & --- \\
 Vocabulary & 32000 & 32000 \\
 Max context & 2048 & 2048 \\
 \midrule
@@ -180,12 +179,17 @@ for $L$ layers \citep{radford2019language}.
 \subsection{Routing and evaluation protocol}
 \label{sec:routing_verification}
 
-Checkpoint inspection shows that the primary and secondary lookup buffers in all 18 layers exactly match Equations~\ref{eq:routing}--\ref{eq:secondary_routing}. We therefore identify the realized mechanism from the stored assignments themselves as permuted-modulo primary routing with a cardinality-balanced secondary assignment, rather than inferring it from the historical run label. The fixed evaluation stream is drawn from the FineWeb-Edu training split; it is consistent across the two runs but is not an independent held-out set.
+Checkpoint inspection shows that the stored primary lookup buffers in all 18 layers match Equation~\ref{eq:routing}. The historical training code and exported evaluation implementation both derive Equation~\ref{eq:secondary_routing} from those buffers. The realized mechanism is therefore permuted-modulo primary routing with a cyclic successor, rather than a frequency-aware or learned assignment. The fixed evaluation stream is drawn from the FineWeb-Edu training split; it is consistent across the two runs but is not an independent held-out set.
 
 \subsection{Standard benchmark protocol}
 \label{sec:benchmark_protocol}
 
 We export the final step-7,629 checkpoints to the same BF16 inference runtime and evaluate both without task-specific fine-tuning. EleutherAI LM Evaluation Harness v0.4.12 runs ARC-Easy, PIQA, HellaSwag, and WikiText-2 with no sample limit, zero-shot prompts, automatic batching, a maximum context of 2,048, and identical seeds. We report length-normalized accuracy for the three multiple-choice tasks and word perplexity for WikiText-2. A paired five-prompt generation check is run with CUDA Graph execution enabled before the full evaluation. The exact commands, checkpoint hashes, package versions, aggregate metrics, and runtime sanity record are included with the supplementary artifacts.
+
+\subsection{Independent-corpus protocol}
+\label{sec:heldout_protocol}
+
+We additionally score the first documents from pinned versions of English C4 validation and The Pile test split \citep{raffel2020exploring,gao2020pile}. Documents are joined with EOS and packed using the checkpoints' exact 32,000-entry tokenizer. For each corpus, both checkpoints score the same 128 contiguous blocks of 2,048 causal-LM targets (262,144 targets total) with Apple MLX/Metal; no weights are updated. C4 consumes 529 documents and The Pile 191 documents. These corpora are distinct from the declared FineWeb-Edu training stream, but no document-level decontamination is performed. Dataset revisions, artifact hashes, per-block values, and runtime versions are included in the supplement.
 
 %=============================================================================
 \section{Results}
@@ -254,10 +258,35 @@ Token-identity residual & 48.61 & \textbf{63.49} & \textbf{34.06} & \textbf{35.2
 
 \FloatBarrier
 
+\subsection{Independent-corpus NLL changes ordering}
+\label{sec:heldout_300m}
+
+Table~\ref{tab:heldout_300m} reports the paired independent-corpus measurements. Token routing has lower NLL on C4 validation, whereas dense has lower NLL on The Pile subset. The opposite ordering constrains the result to a corpus-dependent effect rather than a universal generalization advantage.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{Independent-corpus evaluation of the final matched checkpoints. Each row uses 262,144 scored targets in 128 paired blocks. $\Delta$ is token-identity residual minus dense NLL; negative values favor routing. Confidence intervals use 10,000 paired bootstrap resamples over blocks.}
+\label{tab:heldout_300m}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Corpus} & \textbf{Dense NLL} & \textbf{TR NLL} & \textbf{Dense PPL} & \textbf{TR PPL} & \textbf{$\Delta$ NLL (95\% CI)} \\
+\midrule
+C4 validation & 3.4161 & \textbf{3.4066} & 30.45 & \textbf{30.16} & $\mathbf{-0.0095}$ [$-0.0127,-0.0063$] \\
+The Pile test & \textbf{2.8690} & 2.8769 & \textbf{17.62} & 17.76 & $+0.0079$ [$+0.0022,+0.0138$] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No decontamination against FineWeb-Edu was performed, so these measurements establish performance on independently selected corpora, not guaranteed document-level novelty.
+
+\FloatBarrier
+
 \subsection{100M Ablations}
 \label{sec:ablation_100m}
 
-Panel A contains seven historical single-seed models of approximately 100M parameters, each trained for 1.0003B tokens on the recorded $2\times$B200 setup. The suite separates the shared branch, the residual branch, and several fixed top-2 assignments. The condition configured for frequency-aware routing contains no populated frequency table and therefore realizes modulo-primary/balanced-secondary lookup. Nominal modulo and round-robin controls have equivalent primary assignments in this setup, so differences between those rows are descriptive rather than causal.
+Panel A contains seven historical single-seed models of approximately 100M parameters, each trained for 1.0003B tokens on the recorded $2\times$B200 setup. The suite separates the shared branch, the residual branch, and several fixed top-2 assignments. Preserved configurations and launcher source show that the condition labelled frequency aware contains no populated frequency table and therefore realizes modulo-primary/balanced-secondary lookup. Nominal modulo and round-robin controls have equivalent primary assignments in this setup, so differences between those rows are descriptive rather than causal. The launcher intentionally disabled checkpoint retention and removed its temporary checkpoint directories; Panel A is therefore reported from raw metrics and must be rerun before it can receive new independent-corpus evaluation.
 
 The train/evaluation step difference in the following panels reflects the recorded logging schedule, not a cross-checkpoint substitution. The 1B-token runs have a 954-step budget, log training metrics every 10 steps, and evaluate every 750 steps; step 950 is therefore their last common logged training point and step 750 their last common evaluation checkpoint. The short runs end at step 95, log training metrics every five steps, and evaluate every 75 steps, yielding the analogous step-95/step-75 pair.
 
@@ -334,20 +363,20 @@ The result shows that a fixed token ID can select a useful residual parameter su
 
 The experiment also does not isolate token identity from every alternative explanation. The 100M ablations in Section~\ref{sec:ablation_100m} include residual, random, and learned contextual controls. The short learned-router panel favors auxiliary balancing, but its matched dense control is ahead at 1B tokens while the promoted router completes without dead experts. Panels B and C use one seed and the same o200k tokenizer family as Panel A, but a different data shard and ingestion pipeline, implementation snapshot, and hardware. They therefore compare learned routing with dense computation on one setup without establishing that learned or fixed routing is generally superior. The historical fixed controls likewise cannot provide a causal ranking of assignment strategies because some nominal controls realize equivalent primary assignments.
 
-The 300M comparison uses one seed per architecture, and its fixed loss-evaluation stream comes from the training split. The standard zero-shot panel is limited to three relatively simple multiple-choice tasks and WikiText-2; its accuracy gaps are smaller than one reported standard error and it does not replace broader out-of-distribution evaluation or multi-seed replication. The routed implementation is slower than dense at matched batch. Finally, the stored lookup buffers realize the modulo-primary/cardinality-balanced-secondary rule, not frequency-aware assignment. These limits leave the central observation intact but constrain its scope.
+The 300M comparison uses one seed per architecture, and its training-time loss-evaluation stream comes from the training split. The standard zero-shot panel is limited to three relatively simple multiple-choice tasks and WikiText-2; its accuracy gaps are smaller than one reported standard error. The independent C4 and Pile subsets each contain only 262,144 targets, were not decontaminated against FineWeb-Edu, and produce opposite model orderings. The routed implementation is also slower than dense at matched batch. Finally, the primary lookup realizes a permuted-modulo route with a cyclic successor, not frequency-aware assignment. These limits leave a modest architectural observation but constrain its scope.
 
 %=============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 %=============================================================================
 
-Token identity provides a useful residual routing signal in the reported 306.5M-parameter run pair: after 8B training tokens, the shared-plus-routed model finishes ahead of a matched dense baseline. The observed evaluation-stream NLL gap is $0.0153$; uncertainty is not estimated because each architecture has one seed, and the routed implementation is slower in wall-clock training. The observation poses a concrete question for learned MoE systems: how much contextual routing is necessary when a shared dense path already handles common computation?
+Token identity provides a useful but distribution-dependent residual routing signal in the reported 306.5M-parameter run pair. The shared-plus-routed model finishes ahead on the FineWeb-Edu diagnostic stream, WikiText-2, and C4 validation, while dense is ahead on a Pile test subset and in training throughput. Because each architecture has one training seed, the study does not establish a general expected advantage. It instead poses a concrete question for learned MoE systems: how much contextual routing is necessary when a shared dense path already handles common computation?
 
 \subsubsection*{Broader Impact Statement}
 This work studies an architectural modification for language models. The submission does not include model weights; any future release should follow the applicable data, safety, and licensing requirements.
 
 \subsubsection*{Reproducibility Statement}
-The supplementary archive provides the PyTorch implementation, routing tests, realized run configurations, raw metrics, and figure-generation scripts. It includes the 32k tokenizer for the primary experiment and the o200k configuration and shard-preparation script for the short learned-router diagnostic.
+The supplementary archive provides the PyTorch implementation, routing tests, realized run configurations, raw metrics, Apple MLX scorer, per-block independent-corpus results, and figure-generation scripts. It includes the 32k tokenizer for the primary experiment and the o200k configuration and shard-preparation script for the short learned-router diagnostic.
 
 \clearpage
 \bibliography{references}

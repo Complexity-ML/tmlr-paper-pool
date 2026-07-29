@@ -28,9 +28,6 @@
 \date{July 2026}
 
 \newcommand{\trmodel}{token-routed}
-\newcommand{\MhaTRSeedB}{7.541488}
-\newcommand{\MhaTRPPLSeedB}{1884.63}
-\newcommand{\MhaDeltaSeedB}{-0.185483}
 
 \begin{document}
 \maketitle
@@ -48,8 +45,11 @@ comparison, 306.5M-parameter models are trained on 8B FineWeb-Edu tokens. The
 evaluation changes ordering: routing is ahead on C4 validation and dense is
 ahead on a Pile test subset. Small Apple-MPS pilots additionally compare dense
 and routed feed-forward paths under both grouped-query and full multi-head
-attention. Their paired differences favor routing across the completed runs,
-but the pilots recycle a small local corpus and are not evidence of scaling or
+attention. A stricter local control also replaces the fixed lookup with a
+learned contextual top-2 router while preserving the common backbone, shared
+path, experts, data order, optimizer, and token budget. Fixed token-ID routing
+has lower NLL than both controls in all four local runs, but these pilots
+recycle a small local corpus and are not evidence of scaling or
 generalization. The results support token identity as a useful experimental
 routing signal, not as a general replacement for contextual routing.
 \end{abstract}
@@ -77,7 +77,8 @@ Our main evidence is a matched 306.5M-parameter, 8B-token run pair. We report
 the complete scope of that observation, including slower routed training and
 opposite ordering on two independent corpora. We then add bounded local pilots
 that test whether the shared-plus-routed feed-forward design behaves similarly
-with grouped-query attention (GQA) and multi-head attention (MHA).
+with grouped-query attention (GQA) and multi-head attention (MHA), and whether
+the local result survives a direct learned contextual-router control.
 
 \section{Architecture}
 
@@ -184,10 +185,11 @@ than a universal generalization advantage.
 
 The local pilots test the feed-forward design under two attention backbones.
 They are intentionally small architecture checks, not replications of the
-8B-token experiment. Every run has 99,487,680 parameters, hidden size 384, 10
-layers, eight query heads, and a 200,019-token o200k vocabulary. GQA uses two
-key/value heads; MHA uses eight. Each run trains for 250 steps with batch size
-4 and sequence length 1024, totaling 1,024,000 sampled training tokens.
+8B-token experiment. Dense and fixed-routing runs have 99,487,680 parameters,
+hidden size 384, 10 layers, eight query heads, and a 200,019-token o200k
+vocabulary. GQA uses two key/value heads; MHA uses eight. Each run trains for
+250 steps with batch size 4 and sequence length 1024, totaling 1,024,000
+sampled training tokens.
 
 The source is a local 400-document FineWeb-Edu sample containing 356,120
 tokens. A deterministic 95/5 split leaves 338,314 training tokens and 17,806
@@ -204,34 +206,45 @@ $1392+256$ between shared and routed paths; its dense control uses width 1648.
 MHA allocates $1296+160$; its dense control uses width 1456. The differences
 preserve the same total parameter count within each paired comparison.
 
-\begin{table*}[t]
+For the direct routing control, the fixed lookup is replaced by a learned
+linear map from the contextual hidden state to four expert logits. Both
+variants select two experts. The learned variant uses normalized softmax
+weights over the selected experts and a Switch-style balancing loss with
+coefficient 0.01. The shared path and expert tensors have the same shapes and
+paired initialization as the fixed variant. The learned projection adds 1,536
+parameters per layer, or 15,360 total, giving 99,503,040 parameters: a 0.0154\%
+increase over the fixed and dense references.
+
+\begin{table}[t]
 \centering
-\small
-\caption{\textbf{Matched local Apple-MPS pilots.} $\Delta$ is routed minus
-dense evaluation NLL within the same attention type and seed. Lower is better.
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\caption{\textbf{Matched local Apple-MPS pilots.} Lower NLL is better.
 The two seeds use the same split but different initialization and evaluation
 sampling seeds.}
 \label{tab:mps}
-\begin{tabular}{llrrrrr}
+\begin{tabular}{llrrr}
 \toprule
-Attention & Seed & Dense NLL & Routed NLL & Dense PPL & Routed PPL & $\Delta$ NLL \\
+Attention & Seed & Dense & Learned & Fixed ID \\
 \midrule
-GQA & 42 & 7.596686 & \textbf{7.536167} & 1991.58 & \textbf{1874.63} & $-0.060519$ \\
-GQA & 43 & 7.530082 & \textbf{7.492290} & 1863.26 & \textbf{1794.16} & $-0.037792$ \\
-MHA & 42 & 7.586145 & \textbf{7.536471} & 1970.70 & \textbf{1875.20} & $-0.049674$ \\
-MHA & 43 & 7.726971 & \textbf{\MhaTRSeedB} & 2268.72 & \textbf{\MhaTRPPLSeedB} & $\MhaDeltaSeedB$ \\
+GQA & 42 & 7.596686 & 7.602109 & \textbf{7.536167} \\
+GQA & 43 & 7.530082 & 7.548665 & \textbf{7.492290} \\
+MHA & 42 & 7.586145 & 7.592847 & \textbf{7.536471} \\
+MHA & 43 & 7.726971 & 7.666093 & \textbf{7.541488} \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{table}
 
-All four paired runs favor the routed feed-forward path
-(Table~\ref{tab:mps}). The mean paired NLL difference is $-0.049156$ for GQA
-and $-0.117579$ for MHA. The substantial variation between MHA seeds cautions
-against interpreting either mean as a precise effect estimate. Current median
-logged MPS throughput is lower for routed
-models: 4708 versus 5418.5 tokens/s for GQA, and 4398.5 versus 5590.5 tokens/s
-for MHA at seed 42. These fallback measurements are implementation-specific
-and are not CUDA deployment benchmarks.
+Fixed token-ID routing has lower evaluation NLL than both Dense and the learned
+contextual router in all four local runs (Table~\ref{tab:mps}). Its mean paired
+improvement over the learned router is 0.061159 NLL for GQA and 0.090491 for
+MHA. The learned router is slightly behind Dense in three runs and ahead by
+0.060878 NLL for MHA seed 43. The substantial variation between MHA seeds
+cautions against interpreting either mean as a precise effect estimate.
+Current median logged MPS throughput is lower for fixed routed models: 4708
+versus 5418.5 tokens/s for GQA, and 4398.5 versus 5590.5 tokens/s for MHA at
+seed 42. These fallback measurements are implementation-specific and are not
+CUDA deployment benchmarks.
 
 \section{Limitations}
 
@@ -247,8 +260,8 @@ large-scale persistence, or downstream capability.
 The strongest next tests are predeclared multi-seed training on a larger
 shard, frozen-checkpoint evaluation on separate corpora, equal-compute
 comparisons, and optimized sparse kernels. Learned contextual routers remain
-an important control: this work does not claim that fixed routing is generally
-superior to learned routing.
+an important longer-budget control: the four short local comparisons do not
+establish that fixed routing is generally superior to learned routing.
 
 \section{Conclusion}
 
@@ -256,9 +269,10 @@ Token identity can provide a useful fixed signal for selecting narrow residual
 MLP experts while a shared dense path preserves common contextual computation.
 The 306.5M run pair shows a modest matched-token advantage but slower training
 and corpus-dependent generalization. Small local pilots show the same
-short-budget direction under both GQA and MHA, subject to much stronger
-limitations. The evidence motivates controlled replication rather than a
-claim of a universally better routing architecture.
+short-budget direction under both GQA and MHA, including against a learned
+contextual-router control, subject to much stronger limitations. The evidence
+motivates controlled replication rather than a claim of a universally better
+routing architecture.
 
 \paragraph{Reproducibility.}
 Code, configurations, model cards, and machine-readable metrics are available

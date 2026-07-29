@@ -46,7 +46,7 @@
 \maketitle
 
 \begin{abstract}
-Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par une table fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL sur le flux d'\'{e}valuation de 2,9329 contre 2,9482 pour la baseline dense au dernier checkpoint d'\'{e}valuation commun. Ce flux provient du split d'entra\^{i}nement et l'impl\'{e}mentation rout\'{e}e est plus lente. Les checkpoints finaux restent proches sur ARC-Easy, PIQA et HellaSwag en zero-shot, tandis que le mod\`{e}le rout\'{e} obtient une perplexit\'{e} WikiText-2 modestement inf\'{e}rieure. Un diagnostic s\'{e}par\'{e} de routeur appris inverse son avantage au budget court face au dense \`{a} un budget appari\'{e} de 1,0003B tokens. La r\'{e}plication multi-seed reste ouverte.\footnote{Des outils d'IA g\'{e}n\'{e}rative ont \'{e}t\'{e} utilis\'{e}s comme assistants g\'{e}n\'{e}raux pour la r\'{e}vision linguistique, les contr\^{o}les de coh\'{e}rence entre le manuscrit et les fichiers de m\'{e}triques CSV/JSON fournis par les auteurs, ainsi que les scripts de figures et de r\'{e}vision. Les auteurs ont relu et v\'{e}rifi\'{e} l'ensemble des r\'{e}sultats exp\'{e}rimentaux, valeurs num\'{e}riques, affirmations scientifiques et le texte final, et assument l'enti\`{e}re responsabilit\'{e} de la soumission.}
+Les routeurs Mixture-of-Experts appris utilisent les \'{e}tats cach\'{e}s contextuels pour choisir quels param\`{e}tres traitent chaque token. Nous \'{e}tudions la part de ce signal qui peut provenir de la seule identit\'{e} du token lorsque la capacit\'{e} experte forme un petit r\'{e}siduel au-dessus d'un MLP dense partag\'{e}. Notre mod\`{e}le associe chaque ID \`{a} deux experts \'{e}troits par un lookup fixe propre \`{a} chaque couche ; ces experts transforment le m\^{e}me \'{e}tat cach\'{e} contextuel que la branche partag\'{e}e. Dans une comparaison \`{a} graine unique entre deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s sur 8B tokens FineWeb-Edu, le mod\`{e}le rout\'{e} atteint une NLL de diagnostic de 2,9329 contre 2,9482 pour dense, bien que ce flux vienne du split train et que le routage soit plus lent. Les checkpoints finaux restent proches sur trois t\^{a}ches zero-shot. Le routage obtient une perplexit\'{e} WikiText-2 et une NLL C4-validation inf\'{e}rieures, tandis que dense obtient une NLL inf\'{e}rieure sur un sous-ensemble test de The Pile. L'effet observ\'{e} est donc modeste et d\'{e}pend du corpus ; la r\'{e}plication multi-seed reste ouverte.\footnote{Des outils d'IA g\'{e}n\'{e}rative ont \'{e}t\'{e} utilis\'{e}s comme assistants g\'{e}n\'{e}raux pour la r\'{e}vision linguistique, les contr\^{o}les de coh\'{e}rence entre le manuscrit et les fichiers de m\'{e}triques CSV/JSON fournis par les auteurs, ainsi que les scripts de figures et de r\'{e}vision. Les auteurs ont relu et v\'{e}rifi\'{e} l'ensemble des r\'{e}sultats exp\'{e}rimentaux, valeurs num\'{e}riques, affirmations scientifiques et le texte final, et assument l'enti\`{e}re responsabilit\'{e} de la soumission.}
 \par
 \end{abstract}
 
@@ -61,7 +61,7 @@ Nous testons cette id\'{e}e avec une architecture volontairement asym\'{e}trique
 
 La comparaison principale utilise deux mod\`{e}les de 306,5M param\`{e}tres entra\^{i}n\'{e}s avec le m\^{e}me budget de 8B tokens. Ils partagent leur backbone et leur largeur MLP stock\'{e}e : l'un utilise une largeur dense de 4 096, l'autre une largeur partag\'{e}e de 3 840 et quatre experts de largeur 64, dont deux actifs par token. Au dernier point du flux d'\'{e}valuation fixe, le mod\`{e}le rout\'{e} atteint 2,9329 contre 2,9482. Il s'entra\^{i}ne plus lentement dans l'impl\'{e}mentation actuelle, et le flux d'\'{e}valuation provient du split train FineWeb-Edu.
 
-Cette \'{e}tude apporte une observation contr\^{o}l\'{e}e, pas un verdict g\'{e}n\'{e}ral sur le routage d'experts. Elle d\'{e}finit une architecture shared-plus-residual o\`{u} l'identit\'{e} du token contr\^{o}le uniquement la s\'{e}lection, v\'{e}rifie les tables r\'{e}alis\'{e}es et le comptage de capacit\'{e}, puis rapporte la trajectoire compl\`{e}te \`{a} tokens appari\'{e}s et une \'{e}valuation zero-shot des checkpoints finaux. Nous rapportons aussi un diagnostic de routeurs contextuels avec contr\^{o}les dense et fixe par identit\'{e} de token appari\'{e}s au budget court, suivi d'une comparaison routeur appris/dense \`{a} 1B tokens.
+Cette \'{e}tude apporte une observation contr\^{o}l\'{e}e, pas un verdict g\'{e}n\'{e}ral sur le routage d'experts. Elle d\'{e}finit une architecture shared-plus-residual o\`{u} l'identit\'{e} du token contr\^{o}le uniquement la s\'{e}lection, v\'{e}rifie le routage r\'{e}alis\'{e} et le comptage de capacit\'{e}, puis rapporte la trajectoire compl\`{e}te, les t\^{a}ches standard et deux mesures NLL sur des corpus ind\'{e}pendants. Nous rapportons aussi un diagnostic de routeurs contextuels avec contr\^{o}les dense et fixe appari\'{e}s.
 
 %=============================================================================
 \section{Travaux connexes}
@@ -98,13 +98,12 @@ Chaque couche stocke une table top-2 fixe. L'expert primaire est obtenu par une 
 r_{l,1}(t)=\pi_l(t \bmod E), \qquad E=4.
 \label{eq:routing}
 \end{equation}
-La table secondaire est construite une fois, par ordre croissant d'ID, en choisissant l'expert le moins utilis\'{e} parmi ceux distincts du primaire :
+Le second expert est le successeur cyclique du primaire :
 \begin{equation}
-r_{l,2}(t)=\operatorname*{arg\,min}_{e\neq r_{l,1}(t)}
-\sum_{u=0}^{t-1}\mathbb{1}[r_{l,2}(u)=e],
+r_{l,2}(t)=\bigl(r_{l,1}(t)+1\bigr)\bmod E,
 \label{eq:secondary_routing}
 \end{equation}
-avec d\'{e}partage par l'indice le plus faible. Comme le vocabulaire de 32 000 tokens est divisible par quatre, chaque expert re\c{c}oit exactement 8 000 IDs primaires. Cela \'{e}quilibre la cardinalit\'{e} du vocabulaire, pas le trafic corpus.
+Comme le vocabulaire de 32 000 tokens est divisible par quatre, chaque expert re\c{c}oit exactement 8 000 IDs primaires et 8 000 IDs secondaires. Cela \'{e}quilibre la cardinalit\'{e} du vocabulaire, pas le trafic corpus.
 
 \subsection{MLP partag\'{e} et experts r\'{e}siduels}
 
@@ -113,7 +112,7 @@ Pour l'\'{e}tat cach\'{e} contextuel $\mathbf{x}$ et l'ID $t$, la sortie feed-fo
 \operatorname{MLP}_l(\mathbf{x},t)=g^s_l\operatorname{Shared}_l(\mathbf{x})+g^r_l\!\sum_{j=1}^{2}0.5\,\operatorname{Expert}_{r_{l,j}(t)}(\mathbf{x}),
 \label{eq:mlp_routed}
 \end{equation}
-o\`{u} les gates scalaires appris $g^s_l$ et $g^r_l$ sont initialis\'{e}s \`{a} 1,0 et 0,1. Les sorties expertes s\'{e}lectionn\'{e}es utilisent des poids fixes 0,5/0,5. Chaque branche est une transformation SwiGLU,
+o\`{u} les gates scalaires appris $g^s_l$ et $g^r_l$ sont initialis\'{e}s \`{a} 0,5 et 0,5. Les sorties expertes s\'{e}lectionn\'{e}es utilisent des poids fixes 0,5/0,5. Chaque branche est une transformation SwiGLU,
 \begin{equation}
 \text{Expert}_i(\mathbf{x}) = (\text{SiLU}(\mathbf{x}\mathbf{W}^i_{gate}) \odot \mathbf{x}\mathbf{W}^i_{up})\mathbf{W}^i_{down}
 \label{eq:expert}
@@ -154,7 +153,7 @@ Dimension interm\'{e}diaire rout\'{e}e & 256 total & --- \\
 Interm\'{e}diaire expert & 64 & --- \\
 Interm\'{e}diaire shared expert & 3840 & --- \\
 Experts ($n_{experts}$) & 4, top-$k=2$ & 1 (dense) \\
-Initialisation gates shared/routed & 1,0 / 0,1 & --- \\
+Initialisation gates shared/routed & 0,5 / 0,5 & --- \\
 Vocabulaire & 32000 & 32000 \\
 Contexte max & 2048 & 2048 \\
 \midrule
@@ -181,12 +180,17 @@ pour $L$ couches \citep{radford2019language}.
 \subsection{Protocole de routage et d'\'{e}valuation}
 \label{sec:routing_verification}
 
-L'inspection des checkpoints montre que les buffers de lookup primaire et secondaire des 18 couches correspondent exactement aux \'{e}quations~\ref{eq:routing}--\ref{eq:secondary_routing}. Nous identifions donc le m\'{e}canisme r\'{e}alis\'{e} directement depuis les assignations sauvegard\'{e}es : routage primaire modulo permut\'{e} et assignation secondaire \'{e}quilibr\'{e}e par cardinalit\'{e}, plut\^{o}t que depuis le nom historique du run. Le flux d'\'{e}valuation fixe provient du split train FineWeb-Edu ; il est identique entre les deux runs mais ne constitue pas un holdout ind\'{e}pendant.
+L'inspection des checkpoints montre que les buffers primaires des 18 couches correspondent exactement \`{a} l'\'{e}quation~\ref{eq:routing}. Le code d'entra\^{i}nement historique et l'impl\'{e}mentation d'\'{e}valuation export\'{e}e d\'{e}rivent tous deux l'\'{e}quation~\ref{eq:secondary_routing} de ces buffers. Le m\'{e}canisme r\'{e}alis\'{e} est donc un primaire modulo permut\'{e} avec successeur cyclique, et non une assignation frequency-aware ou apprise. Le flux d'\'{e}valuation fixe provient du split train FineWeb-Edu ; il est identique entre les deux runs mais ne constitue pas un holdout ind\'{e}pendant.
 
 \subsection{Protocole des benchmarks standard}
 \label{sec:benchmark_protocol}
 
 Nous exportons les checkpoints finaux du step 7 629 vers le m\^{e}me runtime d'inf\'{e}rence BF16 et \'{e}valuons les deux mod\`{e}les sans fine-tuning sp\'{e}cifique aux t\^{a}ches. EleutherAI LM Evaluation Harness v0.4.12 ex\'{e}cute ARC-Easy, PIQA, HellaSwag et WikiText-2 sans limite d'exemples, avec des prompts zero-shot, un batching automatique, un contexte maximal de 2 048 et des graines identiques. Nous rapportons l'accuracy normalis\'{e}e par longueur pour les trois t\^{a}ches \`{a} choix multiples et la perplexit\'{e} par mot pour WikiText-2. Un contr\^{o}le de g\'{e}n\'{e}ration appari\'{e} sur cinq prompts est ex\'{e}cut\'{e} avec CUDA Graph activ\'{e} avant l'\'{e}valuation compl\`{e}te. Les commandes exactes, hashes des checkpoints, versions des paquets, m\'{e}triques agr\'{e}g\'{e}es et le sanity record du runtime figurent dans les artefacts suppl\'{e}mentaires.
+
+\subsection{Protocole sur corpus ind\'{e}pendants}
+\label{sec:heldout_protocol}
+
+Nous scorons aussi les premiers documents de versions \'{e}pingl\'{e}es de C4 anglais validation et de The Pile test \citep{raffel2020exploring,gao2020pile}. Les documents sont joints par EOS et empaquet\'{e}s avec le tokenizer 32 000 exact des checkpoints. Pour chaque corpus, les deux mod\`{e}les scorent les m\^{e}mes 128 blocs contigus de 2 048 cibles (262 144 cibles) avec Apple MLX/Metal ; aucun poids n'est mis \`{a} jour. C4 consomme 529 documents et The Pile 191. Aucun contr\^{o}le de d\'{e}contamination contre FineWeb-Edu n'est effectu\'{e}. Les r\'{e}visions, hashes, valeurs par bloc et versions du runtime figurent dans le suppl\'{e}ment.
 
 %=============================================================================
 \section{R\'{e}sultats}
@@ -226,6 +230,29 @@ Train & 7620 & 7,99B  & 2,9324 & \textbf{2,9231} & $\mathbf{-0,009}$ \\
 \end{table}
 \FloatBarrier
 
+\subsection{La NLL sur corpus ind\'{e}pendants change l'ordre des mod\`{e}les}
+\label{sec:heldout_300m}
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{\'{E}valuation sur corpus ind\'{e}pendants. Chaque ligne utilise 262 144 cibles dans 128 blocs appari\'{e}s. $\Delta$ est la NLL rout\'{e}e moins la NLL dense ; une valeur n\'{e}gative favorise le routage. Les intervalles utilisent 10 000 bootstraps appari\'{e}s par bloc.}
+\label{tab:heldout_300m}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Corpus} & \textbf{NLL dense} & \textbf{NLL TR} & \textbf{PPL dense} & \textbf{PPL TR} & \textbf{$\Delta$ NLL (IC 95\%)} \\
+\midrule
+C4 validation & 3,4161 & \textbf{3,4066} & 30,45 & \textbf{30,16} & $\mathbf{-0,0095}$ [$-0,0127,-0,0063$] \\
+The Pile test & \textbf{2,8690} & 2,8769 & \textbf{17,62} & 17,76 & $+0,0079$ [$+0,0022,+0,0138$] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+L'ordre s'inverse selon le corpus : le routage est devant sur C4, tandis que dense est devant sur The Pile. Ces mesures montrent un effet d\'{e}pendant de la distribution, pas une sup\'{e}riorit\'{e} held-out uniforme.
+
+\FloatBarrier
+
 \paragraph{Trafic de routage.} L'utilisation finale des experts est 0,2481/0,2635/0,2481/0,2403, sans expert mort. Il s'agit d'une propri\'{e}t\'{e} observ\'{e}e du run, pas d'une cons\'{e}quence de l'\'{e}quilibre de cardinalit\'{e} du vocabulaire.
 
 \paragraph{Throughput d'entra\^{i}nement.} Sur le m\^{e}me syst\`{e}me $8\times$B300 et avec le m\^{e}me batch global, dense atteint environ 0,95M tokens/s et le mod\`{e}le \`{a} r\'{e}siduel token-identity environ 0,75M tokens/s. La comparaison de qualit\'{e} est appari\'{e}e par tokens, pas par temps mural.
@@ -255,7 +282,7 @@ R\'{e}siduel token-identity & 48,61 & \textbf{63,49} & \textbf{34,06} & \textbf{
 \subsection{Ablations 100M}
 \label{sec:ablation_100m}
 
-Le panneau A contient sept mod\`{e}les historiques d'environ 100M param\`{e}tres, chacun entra\^{i}n\'{e} sur 1,0003B tokens avec une graine unique sur la configuration $2\times$B200 consign\'{e}e. La suite s\'{e}pare la branche partag\'{e}e, la branche r\'{e}siduelle et plusieurs assignations top-2 fixes. La condition configur\'{e}e pour le routage frequency-aware ne contient aucune table de fr\'{e}quences remplie et r\'{e}alise donc un lookup modulo-primaire/secondaire \'{e}quilibr\'{e}. Les contr\^{o}les modulo et round-robin ont les m\^{e}mes assignations primaires dans ce protocole ; leurs diff\'{e}rences sont descriptives, pas causales.
+Le panneau A contient sept mod\`{e}les historiques d'environ 100M param\`{e}tres, chacun entra\^{i}n\'{e} sur 1,0003B tokens avec une graine unique sur la configuration $2\times$B200 consign\'{e}e. La suite s\'{e}pare la branche partag\'{e}e, la branche r\'{e}siduelle et plusieurs assignations top-2 fixes. Les configurations et le launcher conserv\'{e}s montrent que la condition frequency-aware ne contient aucune table de fr\'{e}quences remplie et r\'{e}alise donc un lookup modulo-primaire/secondaire \'{e}quilibr\'{e}. Le launcher ne conservait aucun checkpoint ; le panneau A doit donc \^{e}tre r\'{e}ex\'{e}cut\'{e} avant toute nouvelle \'{e}valuation de corpus.
 
 La diff\'{e}rence entre les steps train et \'{e}valuation des panneaux suivants refl\`{e}te le calendrier de logging enregistr\'{e}, et non une substitution entre checkpoints. Les runs \`{a} 1B tokens ont un budget de 954 steps, consignent les m\'{e}triques train tous les dix steps et sont \'{e}valu\'{e}s tous les 750 steps : le step 950 est donc leur dernier point train commun consign\'{e} et le step 750 leur dernier checkpoint d'\'{e}valuation commun. Les runs courts s'arr\^{e}tent au step 95, consignent les m\'{e}triques train tous les cinq steps et sont \'{e}valu\'{e}s tous les 75 steps, ce qui produit la paire analogue step 95/step 75.
 
@@ -332,21 +359,21 @@ Le r\'{e}sultat montre qu'un ID fixe peut s\'{e}lectionner un sous-espace de par
 
 L'exp\'{e}rience n'isole pas non plus l'identit\'{e} du token de toutes les explications alternatives. Les ablations 100M de la Section~\ref{sec:ablation_100m} incluent des contr\^{o}les r\'{e}siduels, al\'{e}atoires et contextuels appris. Le panneau court favorise l'\'{e}quilibrage auxiliaire, mais son contr\^{o}le dense appari\'{e} passe devant \`{a} 1B tokens tandis que le routeur promu termine sans expert mort. Les panneaux B et C utilisent une graine et la m\^{e}me famille de tokenizer o200k que le panneau A, mais un shard et un pipeline d'ingestion diff\'{e}rents, un autre snapshot de l'impl\'{e}mentation et un autre mat\'{e}riel. Ils comparent donc le routage appris au calcul dense sur une configuration sans \'{e}tablir la sup\'{e}riorit\'{e} g\'{e}n\'{e}rale du routage appris ou fixe. Les contr\^{o}les fixes historiques ne permettent pas non plus un classement causal des assignations car certains contr\^{o}les nominaux r\'{e}alisent les m\^{e}mes assignations primaires.
 
-La comparaison 300M utilise une graine par architecture et son flux fixe d'\'{e}valuation de perte vient du split train. Le panneau zero-shot standard est limit\'{e} \`{a} trois t\^{a}ches \`{a} choix multiples relativement simples et WikiText-2 ; ses \'{e}carts d'accuracy sont inf\'{e}rieurs \`{a} une erreur standard et il ne remplace ni une \'{e}valuation OOD plus large ni une r\'{e}plication multi-seed. L'impl\'{e}mentation rout\'{e}e est plus lente que dense au m\^{e}me batch. Enfin, les buffers de lookup sauvegard\'{e}s r\'{e}alisent la r\`{e}gle modulo-primary/secondary-balanced par cardinalit\'{e}, et non une assignation d\'{e}pendant des fr\'{e}quences. Ces limites pr\'{e}servent l'observation centrale mais en restreignent la port\'{e}e.
+La comparaison 300M utilise une graine par architecture et son flux de diagnostic train vient du split train. Le panneau zero-shot standard est limit\'{e} \`{a} trois t\^{a}ches simples et WikiText-2. Les sous-ensembles C4 et Pile ne contiennent chacun que 262 144 cibles, ne sont pas d\'{e}contamin\'{e}s contre FineWeb-Edu et produisent des ordres oppos\'{e}s. L'impl\'{e}mentation rout\'{e}e est aussi plus lente. Enfin, le lookup primaire r\'{e}alise un modulo permut\'{e} avec successeur cyclique, pas une assignation frequency-aware. Ces limites restreignent fortement la port\'{e}e de l'observation.
 
 %=============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 %=============================================================================
 
-L'identit\'{e} du token fournit un signal de routage r\'{e}siduel utile dans la paire de runs \`{a} 306,5M param\`{e}tres : apr\`{e}s 8B tokens d'entra\^{i}nement, le mod\`{e}le shared-plus-routed termine devant une baseline dense appari\'{e}e. L'\'{e}cart observ\'{e} de NLL sur le flux d'\'{e}valuation est de $0,0153$ ; l'incertitude n'est pas estim\'{e}e car chaque architecture n'utilise qu'une graine, et l'impl\'{e}mentation rout\'{e}e est plus lente en temps mural. Cette observation pose une question concr\`{e}te aux syst\`{e}mes MoE appris : quelle quantit\'{e} de routage contextuel est n\'{e}cessaire lorsqu'un chemin dense partag\'{e} traite d\'{e}j\`{a} le calcul commun ?
+L'identit\'{e} du token fournit un signal de routage r\'{e}siduel utile mais d\'{e}pendant de la distribution dans la paire de runs \`{a} 306,5M param\`{e}tres. Le mod\`{e}le rout\'{e} est devant sur le diagnostic FineWeb-Edu, WikiText-2 et C4 validation, tandis que dense est devant sur The Pile et en throughput. Une seule graine d'entra\^{i}nement ne permet pas d'\'{e}tablir un avantage moyen g\'{e}n\'{e}ral.
 
 
 \subsubsection*{D\'{e}claration d'impact soci\'{e}tal}
 Ce travail \'{e}tudie une modification architecturale pour les mod\`{e}les de langage. La soumission n'inclut pas les poids ; toute publication future devra respecter les exigences applicables de donn\'{e}es, de s\'{e}curit\'{e} et de licence.
 
 \subsubsection*{D\'{e}claration de reproductibilit\'{e}}
-Le suppl\'{e}ment fournit l'impl\'{e}mentation PyTorch, les tests de routage, les configurations r\'{e}alis\'{e}es, les m\'{e}triques brutes et les scripts de figures. Il inclut le tokenizer 32k de l'exp\'{e}rience principale ainsi que la configuration o200k et le script de pr\'{e}paration du shard utilis\'{e}s pour le diagnostic court des routeurs appris.
+Le suppl\'{e}ment fournit l'impl\'{e}mentation PyTorch, les tests de routage, les configurations r\'{e}alis\'{e}es, les m\'{e}triques brutes, le scorer Apple MLX, les valeurs par bloc des corpus ind\'{e}pendants et les scripts de figures.
 
 \bibliography{references}
 \bibliographystyle{tmlr}

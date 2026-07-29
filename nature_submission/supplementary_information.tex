@@ -27,7 +27,9 @@
 
 The reported control experiments are organized into three internally matched panels. All use the same o200k tokenizer family, but absolute losses must not be compared between the historical and contextual implementations because their data ingestion and evaluation streams, hardware and implementation snapshots differ. Panel A is the historical fixed-routing suite on two NVIDIA B200 GPUs. Panel B is a four-condition 99.6-million-token contextual-router diagnostic on two NVIDIA RTX PRO 6000 Blackwell GPUs. Panel C promotes the auxiliary-balanced router to a matched 1.0003-billion-token comparison with dense on the same contextual setup. Every reported row contains one training seed.
 
-Panel A's historical label for a frequency-aware condition was inspected against its realized configuration and checkpoint. No frequency table was populated. The condition therefore implements modulo-primary/cardinality-balanced-secondary routing and is named accordingly here. Likewise, nominal modulo-adjacent and round-robin variants share the same primary assignment in this implementation; their numerical difference is not evidence for a causal difference between primary assignment rules.
+Panel A's historical label for a frequency-aware condition was inspected against its preserved configuration and launcher source. No frequency table was populated. The condition therefore implements modulo-primary/cardinality-balanced-secondary routing and is named accordingly here. Likewise, nominal modulo-adjacent and round-robin variants share the same primary assignment in this implementation; their numerical difference is not evidence for a causal difference between primary assignment rules.
+
+The historical Panel A launcher intentionally disabled checkpoint retention and deleted its temporary checkpoint directory after each run. Its tables are therefore reconstructed from the preserved raw metric CSVs and realized configurations; those 100M weights are not available for post-hoc independent-corpus scoring. A future replication must retain checkpoints before extending this panel.
 
 Panels B and C use learned contextual routers that score four residual experts from each token's hidden state and select two. Panel B compares auxiliary load balancing, loss-free bias balancing, dense computation and a fixed token-identity control. Panel C promotes only the auxiliary-balanced router. Reported training NLL excludes the auxiliary loss. These controls were not subjected to the four-task downstream panel; no downstream-performance claim is made for them.
 
@@ -38,6 +40,12 @@ For the primary comparison, the manuscript reports point measurements at matched
 The 1-billion-token controls have a 954-step budget, log training metrics every ten steps and evaluate every 750 steps. Step 950 is therefore the last common logged training point and step 750 the last common evaluation checkpoint; the table does not substitute one quantity for the other. The short diagnostic ends at step 95, logs training metrics every five steps and evaluates every 75 steps, yielding the analogous step-95/step-75 pair.
 
 Multiple-choice results use length-normalized accuracy. Standard errors are those returned by LM Evaluation Harness. WikiText-2 word perplexity is reported without a harness-provided standard error. No post-hoc benchmark selection or sample truncation was used.
+
+\subsection*{Independent-corpus protocol}
+
+The final 306.5M checkpoints were additionally evaluated on pinned English C4 validation (revision \texttt{1588ec4}) and \texttt{EleutherAI/pile\_val\_test} test (revision \texttt{05b3270}). The first non-empty documents were joined with EOS and packed using the exact checkpoint tokenizer. Each corpus contributed 262,144 scored targets in 128 contiguous 2,048-token blocks; C4 consumed 529 documents and The Pile 191. Both models scored exactly the same blocks through Apple MLX/Metal. No weights were updated and no document-level decontamination against FineWeb-Edu was performed.
+
+Confidence intervals use 10,000 paired bootstrap resamples over the 128 block-level NLL differences with seed 20,260,728. The archive records the complete dataset revisions, tokenizer and model hashes, runtime versions, aggregate results and per-block NLLs.
 
 \section*{Supplementary Results}
 
@@ -61,6 +69,24 @@ Balanced secondary, no shared & 4.9693 & 5.0393 & 334k \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{Independent-corpus evaluation of the final primary checkpoints.} Each corpus contains 262,144 scored targets. $\Delta$ is token-identity residual minus dense NLL; negative values favour routing.}
+\label{tab:s5}
+\begin{tabular}{lrrrrr}
+\toprule
+Corpus & Dense NLL & Routed NLL & Dense PPL & Routed PPL & $\Delta$ NLL (95\% CI) \\
+\midrule
+C4 validation & 3.4161 & \textbf{3.4066} & 30.45 & \textbf{30.16} & $\mathbf{-0.0095}$ [$-0.0127,-0.0063$] \\
+The Pile test & \textbf{2.8690} & 2.8769 & \textbf{17.62} & 17.76 & $+0.0079$ [$+0.0022,+0.0138$] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model ordering changes across corpora. Together with the routed model's modest WikiText-2 advantage, this supports a corpus-dependent effect rather than uniform held-out superiority.
 
 \begin{table}[H]
 \centering
@@ -129,8 +155,9 @@ The anonymized source package contains:
   \item the exact 32,000-entry tokenizer used by the primary checkpoints;
   \item the o200k shard-preparation script and control configurations;
   \item unit tests for route construction, expert selection and capacity accounting;
-  \item scripts that regenerate the manuscript figures and aggregate tables; and
-  \item downstream aggregate results with package versions and evaluation seeds.
+  \item scripts that regenerate the manuscript figures and aggregate tables;
+  \item downstream aggregate results with package versions and evaluation seeds; and
+  \item the standalone Apple MLX scorer plus per-block C4 and Pile results.
 \end{itemize}
 
 Large checkpoints and per-example benchmark logs are excluded from the compact manuscript archive but are available to editors and reviewers. The technical artifact manifest supplied with the code records checkpoint provenance; these implementation details are intentionally omitted from the paper itself.
