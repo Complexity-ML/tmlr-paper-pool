@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the matched-token 300M training and evaluation figure."""
+"""Render the matched-token 300M training and diagnostic evaluation figure."""
 
 from __future__ import annotations
 
@@ -15,12 +15,19 @@ from matplotlib.ticker import MultipleLocator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = REPO_ROOT / "supplementary_code/results/corrected_300m_scaling.csv"
-OUTPUT_PATH = REPO_ROOT / "supplementary_code/figures/fig_300m_loss_curves.png"
+OUTPUT_PDF = REPO_ROOT / "supplementary_code/figures/fig_300m_loss_curves.pdf"
+OUTPUT_PNG = REPO_ROOT / "supplementary_code/figures/fig_300m_loss_curves.png"
 
 DENSE = "Dense SwiGLU"
 ROUTED = "Residual Token-Routed"
-COLORS = {DENSE: "#2563EB", ROUTED: "#DC2626"}
+COLORS = {DENSE: "#2474A6", ROUTED: "#D55E00"}
 LABELS = {DENSE: "Dense", ROUTED: "Token-identity residual"}
+INK = "#18212F"
+MUTED = "#5F6B7A"
+GRID = "#D9E0E8"
+TEAL = "#16847A"
+TEAL_LIGHT = "#E4F3F0"
+WARM_LIGHT = "#FBEEE8"
 
 
 def read_rows() -> dict[str, list[dict[str, float]]]:
@@ -39,55 +46,99 @@ def read_rows() -> dict[str, list[dict[str, float]]]:
     return series
 
 
-def main() -> None:
-    series = read_rows()
-    plt.rcParams.update(
-        {
-            "font.family": "DejaVu Serif",
-            "font.size": 9,
-            "axes.labelsize": 9,
-            "axes.titlesize": 10,
-            "legend.fontsize": 8.5,
-        }
-    )
-    figure, (train_axis, gap_axis) = plt.subplots(
-        1,
-        2,
-        figsize=(10.8, 4.6),
-        gridspec_kw={"width_ratios": [1.35, 1]},
-        constrained_layout=True,
-    )
+def style_axis(axis: plt.Axes) -> None:
+    axis.grid(axis="both", color=GRID, linewidth=0.7, alpha=0.8)
+    axis.tick_params(colors=MUTED, labelsize=7.2, length=3)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.spines["left"].set_color("#9AA7B5")
+    axis.spines["bottom"].set_color("#9AA7B5")
+    axis.spines["left"].set_linewidth(0.8)
+    axis.spines["bottom"].set_linewidth(0.8)
+    axis.xaxis.label.set_color(INK)
+    axis.yaxis.label.set_color(INK)
 
+
+def plot_training(axis: plt.Axes, series: dict[str, list[dict[str, float]]]) -> None:
     for model in (DENSE, ROUTED):
         rows = series[model]
-        train_axis.plot(
+        axis.plot(
             [row["tokens_b"] for row in rows],
             [row["train_loss"] for row in rows],
             color=COLORS[model],
             marker="o",
-            markersize=3.8,
-            linewidth=1.8,
+            markerfacecolor="white",
+            markeredgewidth=1.1,
+            markersize=3.5,
+            linewidth=1.9,
             label=LABELS[model],
+            zorder=3,
         )
 
-    train_axis.axvline(0.776, color="#64748B", linestyle="--", linewidth=1)
-    train_axis.annotate(
-        "first recorded crossover\n0.776B tokens",
-        xy=(0.776, 3.78),
-        xytext=(1.25, 4.55),
-        arrowprops={"arrowstyle": "-", "color": "#64748B", "linewidth": 0.8},
-        color="#475569",
-        fontsize=7.5,
+    axis.set_title("Training trajectory", loc="left", color=INK, pad=8, fontweight="bold")
+    axis.set_xlabel("Training tokens (billions)")
+    axis.set_ylabel("Training NLL")
+    axis.set_xlim(0, 8.15)
+    axis.set_ylim(2.65, 7.05)
+    axis.xaxis.set_major_locator(MultipleLocator(2))
+    style_axis(axis)
+    axis.legend(
+        frameon=False,
+        loc="upper right",
+        handlelength=2.2,
+        borderaxespad=0.5,
+        labelcolor=INK,
     )
-    train_axis.set_title("(a) Training stream")
-    train_axis.set_xlabel("Tokens seen (billions)")
-    train_axis.set_ylabel("Training NLL")
-    train_axis.set_xlim(0, 8.1)
-    train_axis.set_ylim(2.65, 7.05)
-    train_axis.xaxis.set_major_locator(MultipleLocator(2))
-    train_axis.grid(True, color="#E2E8F0", linewidth=0.7)
-    train_axis.legend(frameon=False, loc="upper right")
 
+    axis.axvline(0.776, color=MUTED, linestyle=(0, (3, 2)), linewidth=0.9, zorder=1)
+    axis.text(
+        0.88,
+        4.25,
+        "first recorded\ncrossover\n0.776B tokens",
+        color=MUTED,
+        fontsize=6.6,
+        va="center",
+        ha="left",
+    )
+
+    inset = axis.inset_axes([0.50, 0.31, 0.46, 0.34])
+    inset.set_facecolor("#F8FAFC")
+    for model in (DENSE, ROUTED):
+        rows = [row for row in series[model] if row["tokens_b"] >= 0.734]
+        inset.plot(
+            [row["tokens_b"] for row in rows],
+            [row["train_loss"] for row in rows],
+            color=COLORS[model],
+            marker="o",
+            markerfacecolor="white",
+            markeredgewidth=0.9,
+            markersize=2.6,
+            linewidth=1.35,
+            zorder=3,
+        )
+    inset.axvline(0.776, color=MUTED, linestyle=(0, (3, 2)), linewidth=0.7)
+    inset.set_xlim(0.7, 8.1)
+    inset.set_ylim(2.83, 3.92)
+    inset.set_xticks([1, 4, 8])
+    inset.set_yticks([3.0, 3.4, 3.8])
+    inset.tick_params(labelsize=5.8, colors=MUTED, length=2)
+    inset.grid(color=GRID, linewidth=0.55)
+    for spine in inset.spines.values():
+        spine.set_color("#B8C3CF")
+        spine.set_linewidth(0.65)
+    inset.text(
+        0.03,
+        0.92,
+        "after crossover",
+        transform=inset.transAxes,
+        color=INK,
+        fontsize=6.1,
+        fontweight="bold",
+        va="top",
+    )
+
+
+def plot_gap(axis: plt.Axes, series: dict[str, list[dict[str, float]]]) -> None:
     dense_eval = {
         row["tokens_b"]: row["eval_loss"]
         for row in series[DENSE]
@@ -99,61 +150,156 @@ def main() -> None:
         if row["eval_loss"] == row["eval_loss"]
     }
     common_tokens = sorted(dense_eval.keys() & routed_eval.keys())
-    eval_gaps = [routed_eval[token] - dense_eval[token] for token in common_tokens]
-    gap_axis.axhline(0, color="#334155", linewidth=1)
-    gap_axis.plot(
+    gaps = [routed_eval[token] - dense_eval[token] for token in common_tokens]
+
+    axis.axhspan(-0.06, 0, color=TEAL_LIGHT, zorder=0)
+    axis.axhspan(0, 0.18, color=WARM_LIGHT, zorder=0)
+    axis.axhline(0, color=INK, linewidth=1.0, zorder=2)
+    axis.plot(
         common_tokens,
-        eval_gaps,
-        color="#7C3AED",
+        gaps,
+        color=TEAL,
         marker="o",
-        markersize=4.5,
-        linewidth=1.8,
+        markerfacecolor="white",
+        markeredgecolor=TEAL,
+        markeredgewidth=1.2,
+        markersize=4.2,
+        linewidth=2.0,
+        zorder=3,
     )
-    gap_axis.fill_between(
-        common_tokens,
-        eval_gaps,
-        0,
-        where=[gap <= 0 for gap in eval_gaps],
-        color="#DCFCE7",
-        alpha=0.9,
-        interpolate=True,
+    axis.scatter(
+        [common_tokens[-1]],
+        [gaps[-1]],
+        s=35,
+        color=TEAL,
+        edgecolor="white",
+        linewidth=0.9,
+        zorder=4,
     )
-    gap_axis.fill_between(
-        common_tokens,
-        eval_gaps,
-        0,
-        where=[gap > 0 for gap in eval_gaps],
-        color="#FEE2E2",
-        alpha=0.75,
-        interpolate=True,
+
+    axis.set_title(
+        "Fixed diagnostic stream",
+        loc="left",
+        color=INK,
+        pad=8,
+        fontweight="bold",
     )
-    gap_axis.text(7.85, 0.025, "Dense lower", ha="right", va="center", color="#991B1B", fontsize=7.5)
-    gap_axis.text(
-        7.85,
-        -0.025,
-        "Token-identity residual lower",
+    axis.set_xlabel("Training tokens (billions)")
+    axis.set_ylabel("NLL difference (token-routed - dense)")
+    axis.set_xlim(0, 8.15)
+    axis.set_ylim(-0.06, 0.18)
+    axis.xaxis.set_major_locator(MultipleLocator(2))
+    axis.yaxis.set_major_locator(MultipleLocator(0.04))
+    style_axis(axis)
+
+    axis.text(
+        7.82,
+        0.155,
+        "dense lower",
         ha="right",
         va="center",
-        color="#166534",
-        fontsize=7.5,
+        color="#9A4A2C",
+        fontsize=6.8,
+        fontweight="bold",
     )
-    gap_axis.set_title("(b) Fixed evaluation stream")
-    gap_axis.set_xlabel("Tokens seen (billions)")
-    gap_axis.set_ylabel("NLL gap (token-identity residual - dense)")
-    gap_axis.set_xlim(0, 8.1)
-    gap_axis.set_ylim(-0.06, 0.18)
-    gap_axis.xaxis.set_major_locator(MultipleLocator(2))
-    gap_axis.yaxis.set_major_locator(MultipleLocator(0.04))
-    gap_axis.grid(True, color="#E2E8F0", linewidth=0.7)
+    axis.text(
+        7.82,
+        -0.047,
+        "token-routed lower",
+        ha="right",
+        va="center",
+        color=TEAL,
+        fontsize=6.8,
+        fontweight="bold",
+    )
+    axis.annotate(
+        "-0.0153 NLL\nat 7.864B tokens",
+        xy=(common_tokens[-1], gaps[-1]),
+        xytext=(4.9, 0.035),
+        color=INK,
+        fontsize=7.2,
+        fontweight="bold",
+        ha="left",
+        va="center",
+        arrowprops={
+            "arrowstyle": "-",
+            "color": TEAL,
+            "linewidth": 1.0,
+            "connectionstyle": "arc3,rad=-0.16",
+        },
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": "white",
+            "edgecolor": "#B8C3CF",
+            "linewidth": 0.8,
+        },
+        zorder=5,
+    )
 
-    for axis in (train_axis, gap_axis):
-        axis.spines["top"].set_visible(False)
-        axis.spines["right"].set_visible(False)
-        axis.spines["left"].set_color("#94A3B8")
-        axis.spines["bottom"].set_color("#94A3B8")
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(OUTPUT_PATH, dpi=220, bbox_inches="tight", facecolor="white")
+def main() -> None:
+    series = read_rows()
+    plt.rcParams.update(
+        {
+            "font.family": "DejaVu Sans",
+            "font.size": 8,
+            "axes.labelsize": 8,
+            "axes.titlesize": 9,
+            "legend.fontsize": 7.2,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+        }
+    )
+    figure, axes = plt.subplots(
+        1,
+        2,
+        figsize=(10.8, 4.25),
+        gridspec_kw={"width_ratios": [1.2, 1]},
+        constrained_layout=True,
+    )
+    figure.patch.set_facecolor("white")
+    figure.suptitle(
+        "Matched 306.5M models at the same 8B-token training budget",
+        x=0.055,
+        y=1.02,
+        ha="left",
+        color=INK,
+        fontsize=10.2,
+        fontweight="bold",
+    )
+
+    plot_training(axes[0], series)
+    plot_gap(axes[1], series)
+    axes[0].text(
+        -0.10,
+        1.04,
+        "a",
+        transform=axes[0].transAxes,
+        color=INK,
+        fontsize=10,
+        fontweight="bold",
+        va="bottom",
+    )
+    axes[1].text(
+        -0.12,
+        1.04,
+        "b",
+        transform=axes[1].transAxes,
+        color=INK,
+        fontsize=10,
+        fontweight="bold",
+        va="bottom",
+    )
+
+    OUTPUT_PDF.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(OUTPUT_PDF, bbox_inches="tight", pad_inches=0.04, facecolor="white")
+    figure.savefig(
+        OUTPUT_PNG,
+        dpi=260,
+        bbox_inches="tight",
+        pad_inches=0.04,
+        facecolor="white",
+    )
     plt.close(figure)
 
 

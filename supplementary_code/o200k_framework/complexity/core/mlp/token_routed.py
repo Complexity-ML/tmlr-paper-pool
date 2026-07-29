@@ -265,8 +265,8 @@ class TokenRoutedMLP(MLPBase):
 
         ``zipf`` requires token_frequencies and uses greedy frequency bin-packing.
         ``modulo`` and ``modulo_balanced_secondary`` use token_id % E for the
-        primary route. The latter reproduces the fixed top-2 lookup used by the
-        reported runs while naming its secondary-route behavior explicitly.
+        primary route. The latter names the balanced-secondary behavior used by
+        the historical 100M control suite.
 
         When config.per_layer_routing is True, a deterministic permutation
         of the expert indices specific to this layer is applied after the
@@ -274,12 +274,22 @@ class TokenRoutedMLP(MLPBase):
         preserves load distribution) while giving each layer a different
         token→expert assignment, enriching specialization.
         """
-        strategy = str(getattr(self.config, "routing_strategy", "modulo_balanced_secondary")).lower()
+        strategy = str(
+            getattr(
+                self.config,
+                "routing_strategy",
+                "modulo_cyclic",
+            )
+        ).lower()
+        strategy = {
+            "modulo_cyclic": "modulo",
+            "modulo_frequency_balanced_secondary": "modulo_balanced_secondary",
+        }.get(strategy, strategy)
         freqs = getattr(self.config, 'token_frequencies', None)
         if strategy == "zipf" and freqs is None:
             raise ValueError(
                 "routing_strategy='zipf' requires token_frequencies; "
-                "use 'modulo_balanced_secondary' to reproduce the reported fixed top-2 lookup"
+                "use 'modulo_balanced_secondary' for the historical balanced-secondary control"
             )
         if strategy == "zipf":
             assert freqs is not None
@@ -298,7 +308,7 @@ class TokenRoutedMLP(MLPBase):
             # Round-robin over frequency rank (or token id if no frequencies),
             # giving a routing-table control distinct from token-id modulo.
             if freqs is not None:
-                order = freqs.detach().cpu().float().argsort(descending=True)
+                order = freqs.detach().cpu().double().argsort(descending=True)
             else:
                 order = torch.arange(vocab_size, dtype=torch.long, device="cpu")
             mapping = torch.empty(vocab_size, dtype=torch.long, device="cpu")
@@ -351,7 +361,17 @@ class TokenRoutedMLP(MLPBase):
         if top_k == 1:
             return routes
 
-        strategy = str(getattr(self.config, "routing_strategy", "modulo_balanced_secondary")).lower()
+        strategy = str(
+            getattr(
+                self.config,
+                "routing_strategy",
+                "modulo_cyclic",
+            )
+        ).lower()
+        strategy = {
+            "modulo_cyclic": "modulo",
+            "modulo_frequency_balanced_secondary": "modulo_balanced_secondary",
+        }.get(strategy, strategy)
         if strategy in {"modulo", "round_robin"}:
             for route_idx in range(1, top_k):
                 routes[route_idx] = (routes[0] + route_idx) % num_experts

@@ -95,6 +95,6 @@ def make_config(args) -> ModelConfig:
         use_cggr=getattr(args, "cggr", getattr(args, "use_cggr", "auto")),
         static_expert_capacity=bool(getattr(args, "static_expert_capacity", False)),
         collect_moe_telemetry=bool(getattr(args, "moe_telemetry", False)),
-        routing_strategy=getattr(args, "routing_strategy", "modulo_balanced_secondary"),
+        routing_strategy=getattr(args, "routing_strategy", "modulo_cyclic"),
         lsh_threshold_mode=getattr(args, "lsh_threshold_mode", "zero"),
     )

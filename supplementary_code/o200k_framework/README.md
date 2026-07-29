@@ -16,7 +16,7 @@ feat: add H200 1B ablation launcher
 - `scripts/ablations_100m/`: local diagnostics and H200 1B launcher.
 - `scripts/train_100m_o200k_tr_local.py`, `scripts/train_300m_tr_local.py`, `scripts/train_300m_dense_local.py`.
 
-The sole reported 300M Token-Routed entrypoint is `scripts/train_300m_tr_local.py`. Its defaults are fixed to the verified run configuration: the included `tokenizer-32k/` asset, vocabulary 32,000, hidden size 1,024, 18 layers, GQA 16/4, shared width 3,840, four routed experts of width 64, `modulo_balanced_secondary`, deterministic top-2 with fixed 0.5/0.5 expert weights, and learned shared/routed branch gates initialized to 1.0/0.1. Startup rejects any tokenizer whose vocabulary is not exactly 32,000. The unrelated legacy o200k 300M profile is intentionally not included as a run config.
+The sole reported 300M Token-Routed entrypoint is `scripts/train_300m_tr_local.py`. Its defaults are fixed to the audited checkpoint configuration: the included `tokenizer-32k/` asset, vocabulary 32,000, hidden size 1,024, 18 layers, GQA 16/4, shared width 3,840, routed width 256 split into four experts of width 64, permuted-modulo primary routing with a cyclic successor, deterministic top-2 with fixed 0.5/0.5 expert weights, and learned shared/routed branch gates initialized to 0.5/0.5. Startup rejects any tokenizer whose vocabulary is not exactly 32,000. The unrelated legacy o200k 300M profile is intentionally not included as a run config.
 
 For the full reported command rather than smoke-test defaults, run `scripts/run_verified_300m_8xb300.sh tr` and `scripts/run_verified_300m_8xb300.sh dense` on an 8-GPU node. The launcher records the 7,620-step, batch-64/GPU, sequence-2,048, BF16, seed-42 configuration. The evaluation loader uses a fixed stream from the FineWeb-Edu `train` split and is not an independent held-out validation set.
 
@@ -24,12 +24,17 @@ For the full reported command rather than smoke-test defaults, run `scripts/run_
 
 `complexity/core/mlp/token_routed.py` uses fixed token-ID lookup tables; there is no learned expert-selection router. The routing controls are:
 
-- `modulo_balanced_secondary` uses a permuted modulo primary route and a deterministic load-balanced secondary route. This explicitly names the lookup realised by the reported runs.
+- The primary 300M entrypoint uses `modulo_cyclic`: a permuted-modulo primary route and its cyclic successor, matching the historical training code and exported checkpoint. It never reads corpus frequencies.
+- The historical Panel A controls retain their separately audited
+  `modulo_balanced_secondary` labels and do not trigger a corpus-frequency
+  scan. The Panel B fixed control alone uses the explicit ablation-only
+  `modulo_frequency_balanced_secondary` name.
 - Random uses deterministic random auxiliary routes distinct from the primary route.
-- Modulo and round-robin use adjacent shifted auxiliary routes.
-- Explicit `zipf` requires a token-frequency table and fails loudly when it is absent.
+- `modulo_cyclic` and round-robin use adjacent shifted auxiliary routes.
+- Explicit `zipf` and `modulo_frequency_balanced_secondary` are ablation-only
+  routes that require a token-frequency table.
 
-Top-2 expert weights are fixed at 0.5/0.5 in the reported configurations. The learned shared/routed gates are branch-level scalars, not routing logits. This corrected snapshot prevents both silent strategy fallback and accidental use of frequency-balanced auxiliary routes in non-frequency controls.
+Top-2 expert weights are fixed at 0.5/0.5 in the reported configurations. The learned shared/routed gates are branch-level scalars, not routing logits. The framework default is `modulo_cyclic`; frequency-aware construction is reached only by the explicit ablation controls above.
 
 ## 100M ablations
 

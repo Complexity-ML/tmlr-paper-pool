@@ -102,9 +102,9 @@ def text_token_frequencies(path: str, tokenizer_path: str, vocab_size: int) -> t
     tokens = load_text_tokens(path, tokenizer_path)
     ids = torch.tensor(tokens, dtype=torch.long)
     ids = ids[(ids >= 0) & (ids < vocab_size)]
-    freqs = torch.zeros(vocab_size, dtype=torch.float32)
+    freqs = torch.zeros(vocab_size, dtype=torch.int64)
     if ids.numel() > 0:
-        freqs.scatter_add_(0, ids, torch.ones_like(ids, dtype=torch.float32))
+        freqs.add_(torch.bincount(ids, minlength=vocab_size))
     logger.info(
         f"Zipf routing frequencies: {int(freqs.sum().item()):,} tokens, "
         f"{int((freqs > 0).sum().item()):,} vocab entries"

@@ -95,7 +95,10 @@ def uses_corpus_routing_frequencies(mlp_type: str, routing_strategy: str) -> boo
         "deterministic_moe",
         "complexity",
     }
-    frequency_aware_strategies = {"zipf", "round_robin", "modulo_balanced_secondary"}
+    frequency_aware_strategies = {
+        "zipf",
+        "modulo_frequency_balanced_secondary",
+    }
     return mlp_type.lower() in lexical_mlp_types and routing_strategy.lower() in frequency_aware_strategies
 
 

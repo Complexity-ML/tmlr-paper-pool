@@ -107,12 +107,20 @@ mkdir -p "runs/${PREFIX}"
 for name in "${MODEL_CONFIGS[@]}"; do
   run_name="${PREFIX}-${name}"
   echo "=== ${run_name} ==="
+  MODEL_ARGS=()
+  if [[ "${name}" == "100m_modulo_balanced_secondary_shared" ]]; then
+    # Panel B's fixed control is the only reported condition that derives the
+    # auxiliary lookup from exact corpus counts. Panel A keeps the historical
+    # cardinality-balanced route encoded in its YAML.
+    MODEL_ARGS+=(--routing-strategy modulo_frequency_balanced_secondary)
+  fi
   torchrun --standalone --nproc_per_node=2 scripts/train_100m_o200k_tr_local.py \
     --config "configs/run_configs/ablations_100m/${name}.yaml" \
     --seed "${SEED}" \
     --run-name "${run_name}" \
     --save-dir "checkpoints/${run_name}" \
     "${COMMON_ARGS[@]}" \
+    "${MODEL_ARGS[@]}" \
     "$@" \
     2>&1 | tee "runs/${PREFIX}/${name}.log"
 done

@@ -71,8 +71,8 @@ class ModelConfig:
 
     # === MoE (Token-Routed) ===
     num_experts: int = 1  # 1 = standard MLP, >1 = MoE
-    token_frequencies: Optional[torch.Tensor] = None  # Required only for explicit frequency-aware Zipf routing
-    routing_strategy: str = "modulo_balanced_secondary"
+    token_frequencies: Optional[torch.Tensor] = None  # Ablation-only frequency table
+    routing_strategy: str = "modulo_cyclic"
     lsh_routing: bool = False  # Route on a fixed random-hyperplane hash of h (semantic), not the token id
     lsh_bits: int = 0  # Number of hyperplanes (0 = ceil(log2(num_experts)))
     lsh_from_layer: int = 0  # LSH routing only for layers >= this index; earlier layers stay lexical
@@ -193,11 +193,19 @@ class ModelConfig:
         if self.router_bias_update_rate < 0.0:
             raise ValueError("router_bias_update_rate must be non-negative")
         if self.routing_strategy not in {
-            "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
+            "zipf",
+            "modulo",
+            "modulo_cyclic",
+            "modulo_balanced_secondary",
+            "modulo_frequency_balanced_secondary",
+            "round_robin",
+            "random",
+            "lsh_hidden",
         }:
             raise ValueError(
-                "routing_strategy must be one of zipf, modulo, modulo_balanced_secondary, "
-                "round_robin, random, lsh_hidden"
+                "routing_strategy must be one of zipf, modulo_cyclic, "
+                "modulo_frequency_balanced_secondary, round_robin, random, "
+                "lsh_hidden (legacy aliases: modulo, modulo_balanced_secondary)"
             )
         if self.lsh_threshold_mode not in {"batch_median", "zero"}:
             raise ValueError("lsh_threshold_mode must be 'batch_median' or 'zero'")
@@ -265,9 +273,17 @@ class ModelConfig:
         valid_keys = {f.name for f in dataclasses.fields(cls)}
         filtered = {k: v for k, v in data.items() if k in valid_keys}
         if filtered.get("routing_strategy") not in {
-            None, "zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"
+            None,
+            "zipf",
+            "modulo",
+            "modulo_cyclic",
+            "modulo_balanced_secondary",
+            "modulo_frequency_balanced_secondary",
+            "round_robin",
+            "random",
+            "lsh_hidden",
         }:
-            filtered["routing_strategy"] = "modulo_balanced_secondary"
+            filtered["routing_strategy"] = "modulo_cyclic"
         return cls(**filtered)
 
     @classmethod

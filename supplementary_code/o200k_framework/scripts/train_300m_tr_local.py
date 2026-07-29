@@ -67,7 +67,7 @@ def make_config(args) -> ModelConfig:
         routed_gate_init=args.routed_gate_init,
         top_k=args.top_k,
         top_k_primary_weight=args.top_k_primary_weight,
-        routing_strategy="modulo_balanced_secondary",
+        routing_strategy="modulo_cyclic",
     )
 
 
@@ -297,10 +297,10 @@ def main():
     # parameter budget goes to a dense-compatible shared SwiGLU trunk plus a
     # small deterministic Token-Routed residual path. This keeps the model at
     # ~306.5M params like dense while preserving TR specialization capacity.
-    parser.add_argument("--intermediate-size", type=int, default=64)
+    parser.add_argument("--intermediate-size", type=int, default=256)
     parser.add_argument("--shared-intermediate-size", type=int, default=3840)
-    parser.add_argument("--shared-gate-init", type=float, default=1.0)
-    parser.add_argument("--routed-gate-init", type=float, default=0.1)
+    parser.add_argument("--shared-gate-init", type=float, default=0.5)
+    parser.add_argument("--routed-gate-init", type=float, default=0.5)
     parser.add_argument("--learn-shared-routed-gates", dest="learn_shared_routed_gates", action="store_true", default=True)
     parser.add_argument("--no-learn-shared-routed-gates", dest="learn_shared_routed_gates", action="store_false")
     parser.add_argument("--top-k", type=int, default=2)

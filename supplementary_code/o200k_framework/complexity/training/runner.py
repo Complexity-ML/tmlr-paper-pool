@@ -236,11 +236,11 @@ class TrainRunner:
             tokenizer=tokenizer, seq_len=512, rank=0, world_size=1,
         )
         freq_loader = DataLoader(freq_dataset, batch_size=64, num_workers=2)
-        freqs = torch.zeros(vocab_size, dtype=torch.float32)
+        freqs = torch.zeros(vocab_size, dtype=torch.int64)
         for batch in islice(freq_loader, 1000):
             ids = batch["input_ids"].flatten()
             ids = ids[ids < vocab_size]
-            freqs.scatter_add_(0, ids, torch.ones_like(ids, dtype=torch.float32))
+            freqs.add_(torch.bincount(ids, minlength=vocab_size))
         logger.info(f"  {freqs.sum():.0f} tokens sampled")
         return freqs
 

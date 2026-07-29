@@ -157,11 +157,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--routing-strategy",
-        choices=["zipf", "modulo", "modulo_balanced_secondary", "round_robin", "random", "lsh_hidden"],
-        default="modulo_balanced_secondary",
+        choices=[
+            "zipf",
+            "modulo",
+            "modulo_cyclic",
+            "modulo_balanced_secondary",
+            "modulo_frequency_balanced_secondary",
+            "round_robin",
+            "random",
+            "lsh_hidden",
+        ],
+        default="modulo_cyclic",
         help=(
-            "Token-Routed strategy: zipf requires explicit frequencies; "
-            "modulo_balanced_secondary reproduces the reported fixed top-2 lookup."
+            "modulo_cyclic uses token_id modulo E plus cyclic successors and "
+            "no corpus counts. Frequency-aware names are retained only for "
+            "the reported ablation controls."
         ),
     )
     parser.add_argument(

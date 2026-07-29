@@ -26,20 +26,20 @@ case "$MODEL" in
   tr)
     torchrun --standalone --nproc_per_node=8 scripts/train_300m_tr_local.py \
       "${COMMON[@]}" \
-      --intermediate-size 64 \
+      --intermediate-size 256 \
       --shared-intermediate-size 3840 \
-      --shared-gate-init 1.0 \
-      --routed-gate-init 0.1 \
+      --shared-gate-init 0.5 \
+      --routed-gate-init 0.5 \
       --top-k 2 \
       --top-k-primary-weight 0.5 \
-      --run-name 300m-tr-corrected-b300 \
-      --save-dir checkpoints/300m-tr-corrected-b300
+      --run-name 300m-tr-verified-b300 \
+      --save-dir checkpoints/300m-tr-verified-b300
     ;;
   dense)
     torchrun --standalone --nproc_per_node=8 scripts/train_300m_dense_local.py \
       "${COMMON[@]}" \
-      --run-name 300m-dense-corrected-b300 \
-      --save-dir checkpoints/300m-dense-corrected-b300
+      --run-name 300m-dense-verified-b300 \
+      --save-dir checkpoints/300m-dense-verified-b300
     ;;
   *)
     echo "usage: $0 {tr|dense}" >&2

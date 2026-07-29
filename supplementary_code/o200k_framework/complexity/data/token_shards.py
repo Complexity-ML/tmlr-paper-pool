@@ -214,6 +214,17 @@ def load_token_shard(path: str | Path, *, mmap_mode: str = "r") -> tuple[np.memm
     return tokens, metadata
 
 
+def _accumulate_frequency_chunk(
+    frequencies: torch.Tensor,
+    token_ids: torch.Tensor,
+) -> None:
+    """Accumulate token counts exactly beyond float32's 2**24 boundary."""
+
+    if frequencies.dtype != torch.int64:
+        raise TypeError("token frequency accumulator must use int64")
+    frequencies.add_(torch.bincount(token_ids, minlength=frequencies.numel()))
+
+
 def token_shard_frequencies(path: str | Path, vocab_size: int) -> torch.Tensor:
     """Count token frequencies from a memory-mapped token shard."""
 
@@ -228,8 +239,7 @@ def token_shard_frequencies(path: str | Path, vocab_size: int) -> torch.Tensor:
         valid = chunk[(chunk >= 0) & (chunk < vocab_size)]
         if valid.size == 0:
             continue
-        counts = np.bincount(valid, minlength=vocab_size).astype(np.int64, copy=False)
-        freqs.add_(torch.from_numpy(counts))
+        _accumulate_frequency_chunk(freqs, torch.from_numpy(valid))
     return freqs
 
 

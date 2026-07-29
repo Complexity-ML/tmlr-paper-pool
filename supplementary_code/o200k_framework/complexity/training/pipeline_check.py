@@ -44,7 +44,7 @@ def _profile_args(raw: dict[str, Any]) -> SimpleNamespace:
         top_k=int(run.get("top_k", 2)),
         top_k_primary_weight=float(run.get("top_k_primary_weight", 0.5)),
         static_expert_capacity=bool(run.get("static_expert_capacity", False)),
-        routing_strategy=str(run.get("routing_strategy", "modulo_balanced_secondary")),
+        routing_strategy=str(run.get("routing_strategy", "modulo_cyclic")),
     )
 
 

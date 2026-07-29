@@ -32,6 +32,15 @@ def test_token_shard_frequency_counts_are_integer_exact(tmp_path):
     assert int(frequencies.sum().item()) == len(tokens)
 
 
+def test_token_frequency_accumulator_is_exact_above_float32_limit():
+    from complexity.data.token_shards import _accumulate_frequency_chunk
+
+    frequencies = torch.tensor([2**24, 0], dtype=torch.int64)
+    _accumulate_frequency_chunk(frequencies, torch.tensor([0, 1, 1]))
+
+    assert frequencies.tolist() == [2**24 + 1, 2]
+
+
 def test_token_routed_supports_explicit_lexical_routing_strategies():
     from complexity.core.mlp.base import MLPConfig
     from complexity.core.mlp.token_routed import TokenRoutedMLP
@@ -198,6 +207,7 @@ def test_model_config_and_o200k_parser_support_ablation_switches():
         "--routing-strategy", "random",
         "--no-shared-expert",
     ])
+    assert build_parser().parse_args([]).routing_strategy == "modulo_cyclic"
     args.vocab_size = 200019
     profile = {
         "hidden_size": 384,
@@ -280,14 +290,14 @@ def test_300m_entrypoint_defaults_match_verified_checkpoint(monkeypatch):
     assert config.num_hidden_layers == 18
     assert config.num_attention_heads == 16
     assert config.num_key_value_heads == 4
-    assert config.intermediate_size == 64
+    assert config.intermediate_size == 256
     assert config.shared_intermediate_size == 3840
     assert config.num_experts == 4
-    assert config.routing_strategy == "modulo_balanced_secondary"
+    assert config.routing_strategy == "modulo_cyclic"
     assert config.top_k == 2
     assert config.top_k_primary_weight == 0.5
-    assert config.shared_gate_init == 1.0
-    assert config.routed_gate_init == 0.1
+    assert config.shared_gate_init == 0.5
+    assert config.routed_gate_init == 0.5
 
 
 def test_seven_100m_ablation_entrypoints_reference_configs():

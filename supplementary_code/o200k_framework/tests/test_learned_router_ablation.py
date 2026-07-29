@@ -113,8 +113,15 @@ def test_corpus_frequencies_are_excluded_from_learned_and_dense_routers():
 
     assert not uses_corpus_routing_frequencies("learned_router", "modulo_balanced_secondary")
     assert not uses_corpus_routing_frequencies("swiglu", "modulo_balanced_secondary")
-    assert uses_corpus_routing_frequencies("token_routed", "modulo_balanced_secondary")
+    assert not uses_corpus_routing_frequencies(
+        "token_routed", "modulo_balanced_secondary"
+    )
+    assert uses_corpus_routing_frequencies(
+        "token_routed", "modulo_frequency_balanced_secondary"
+    )
     assert uses_corpus_routing_frequencies("token_routed", "zipf")
+    assert not uses_corpus_routing_frequencies("token_routed", "modulo_cyclic")
+    assert not uses_corpus_routing_frequencies("token_routed", "round_robin")
     assert not uses_corpus_routing_frequencies("token_routed", "random")
 
 
@@ -221,5 +228,6 @@ def test_two_gpu_launcher_covers_the_four_central_controls():
     assert "--tokens-path" in text
     assert "tokens.idx.json" in text
     assert "tokens.bin" in text
+    assert "--routing-strategy modulo_frequency_balanced_secondary" in text
     assert "rtxpro2-1b-s" in text
     assert "rtxpro2-100m-token-s" in text
