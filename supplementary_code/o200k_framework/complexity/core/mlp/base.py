@@ -22,6 +22,8 @@ class MLPConfig:
 
     # MoE specific
     num_experts: int = 1  # 1 = standard MLP, >1 = MoE
+    expert_initialization: str = "gpt_normal"
+    initializer_range: float = 0.02
     vocab_size: int = 100000  # For token-routed MoE
     hash_routing: str = ""  # "" = modulo (token_id % E), "learned" = learned projection router
     routing_strategy: str = "modulo_cyclic"
@@ -58,6 +60,12 @@ class MLPConfig:
             raise ValueError("intermediate_size must be positive")
         if self.num_experts <= 0:
             raise ValueError("num_experts must be positive")
+        if self.expert_initialization not in {"gpt_normal", "legacy_kaiming"}:
+            raise ValueError(
+                "expert_initialization must be 'gpt_normal' or 'legacy_kaiming'"
+            )
+        if self.initializer_range <= 0.0:
+            raise ValueError("initializer_range must be positive")
         if self.vocab_size <= 0:
             raise ValueError("vocab_size must be positive")
         if self.top_k <= 0:

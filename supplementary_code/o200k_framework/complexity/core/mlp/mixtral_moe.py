@@ -73,10 +73,25 @@ class MixtralMoE(MLPBase):
         self._init_weights()
 
     def _init_weights(self) -> None:
-        for expert_idx in range(self.num_experts):
-            nn.init.kaiming_uniform_(self.gate_proj_w[expert_idx], a=5**0.5)
-            nn.init.kaiming_uniform_(self.up_proj_w[expert_idx], a=5**0.5)
-            nn.init.kaiming_uniform_(self.down_proj_w[expert_idx], a=5**0.5)
+        expert_initialization = getattr(
+            self.config, "expert_initialization", "gpt_normal"
+        )
+        if expert_initialization == "legacy_kaiming":
+            for expert_idx in range(self.num_experts):
+                nn.init.kaiming_uniform_(
+                    self.gate_proj_w[expert_idx], a=5**0.5
+                )
+                nn.init.kaiming_uniform_(
+                    self.up_proj_w[expert_idx], a=5**0.5
+                )
+                nn.init.kaiming_uniform_(
+                    self.down_proj_w[expert_idx], a=5**0.5
+                )
+        else:
+            std = float(getattr(self.config, "initializer_range", 0.02))
+            nn.init.normal_(self.gate_proj_w, mean=0.0, std=std)
+            nn.init.normal_(self.up_proj_w, mean=0.0, std=std)
+            nn.init.normal_(self.down_proj_w, mean=0.0, std=std)
         nn.init.kaiming_uniform_(self.router.weight, a=5**0.5)
 
     def forward(

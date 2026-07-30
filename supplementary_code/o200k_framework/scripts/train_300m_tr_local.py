@@ -58,6 +58,7 @@ def make_config(args) -> ModelConfig:
         attention_type="gqa",
         mlp_type="token_routed",
         num_experts=4,
+        expert_initialization=args.expert_initialization,
         shared_expert=True,
         shared_intermediate_size=args.shared_intermediate_size,
         norm_type="rmsnorm",
@@ -299,6 +300,15 @@ def main():
     # ~306.5M params like dense while preserving TR specialization capacity.
     parser.add_argument("--intermediate-size", type=int, default=256)
     parser.add_argument("--shared-intermediate-size", type=int, default=3840)
+    parser.add_argument(
+        "--expert-initialization",
+        choices=["gpt_normal", "legacy_kaiming"],
+        default="legacy_kaiming",
+        help=(
+            "legacy_kaiming reproduces the reported checkpoints; gpt_normal "
+            "is the corrected matched-scale initialization for new runs."
+        ),
+    )
     parser.add_argument("--shared-gate-init", type=float, default=0.5)
     parser.add_argument("--routed-gate-init", type=float, default=0.5)
     parser.add_argument("--learn-shared-routed-gates", dest="learn_shared_routed_gates", action="store_true", default=True)
@@ -338,6 +348,7 @@ def main():
             "Config: Token-Routed residual, hidden=1024, layers=18, GQA=16/4, "
             f"inter={args.intermediate_size}, shared_inter={args.shared_intermediate_size}, "
             f"experts=4, top_k={args.top_k}, primary_w={args.top_k_primary_weight}, "
+            f"expert_init={args.expert_initialization}, "
             f"learn_gates={args.learn_shared_routed_gates}, "
             f"gates=({args.shared_gate_init},{args.routed_gate_init}), "
             "lexical_residual_no_mu=True"

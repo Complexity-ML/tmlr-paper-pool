@@ -15,6 +15,7 @@ run:
   save_steps: 954
   save_total_limit: 2
   loss_chunk_tokens: 1024
+  expert_initialization: legacy_kaiming
   mlp_type: learned_router
   top_k: 2
   router_balance_mode: aux_loss

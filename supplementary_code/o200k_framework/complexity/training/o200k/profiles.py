@@ -78,6 +78,9 @@ def make_config(args) -> ModelConfig:
         attention_type="gqa",
         mlp_type=getattr(args, "mlp_type", None) or "token_routed",
         num_experts=4,
+        expert_initialization=getattr(
+            args, "expert_initialization", "gpt_normal"
+        ),
         shared_expert=bool(getattr(args, "shared_expert", True)),
         shared_intermediate_size=args.shared_intermediate_size,
         shared_expert_chunk_tokens=getattr(args, "shared_expert_chunk_tokens", 0),

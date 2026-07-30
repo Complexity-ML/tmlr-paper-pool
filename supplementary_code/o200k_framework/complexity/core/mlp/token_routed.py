@@ -150,10 +150,31 @@ class TokenRoutedMLP(MLPBase):
         self.down_proj_w = nn.Parameter(torch.empty(
             self.num_experts, self.expert_intermediate_size, self.hidden_size
         ))
-        for expert_idx in range(self.num_experts):
-            nn.init.kaiming_uniform_(self.gate_proj_w[expert_idx], a=5**0.5)
-            nn.init.kaiming_uniform_(self.up_proj_w[expert_idx], a=5**0.5)
-            nn.init.kaiming_uniform_(self.down_proj_w[expert_idx], a=5**0.5)
+        expert_initialization = getattr(
+            config, "expert_initialization", "gpt_normal"
+        )
+        if expert_initialization == "legacy_kaiming":
+            # Exact reproduction mode for the checkpoints reported in the
+            # manuscript. The raw tensor layout makes Kaiming use the narrow
+            # expert width as fan-in.
+            for expert_idx in range(self.num_experts):
+                nn.init.kaiming_uniform_(
+                    self.gate_proj_w[expert_idx], a=5**0.5
+                )
+                nn.init.kaiming_uniform_(
+                    self.up_proj_w[expert_idx], a=5**0.5
+                )
+                nn.init.kaiming_uniform_(
+                    self.down_proj_w[expert_idx], a=5**0.5
+                )
+        else:
+            # Raw nn.Parameter tensors are not visited by the model's
+            # nn.Linear initializer. Match routed gate/up projections to the
+            # GPT-style scale used by the dense and shared paths.
+            std = float(getattr(config, "initializer_range", 0.02))
+            nn.init.normal_(self.gate_proj_w, mean=0.0, std=std)
+            nn.init.normal_(self.up_proj_w, mean=0.0, std=std)
+            nn.init.normal_(self.down_proj_w, mean=0.0, std=std)
 
         # Shared lexical expert: dense SwiGLU all tokens pass through.
         # Default size = intermediate_size (full dense width). shared_down is

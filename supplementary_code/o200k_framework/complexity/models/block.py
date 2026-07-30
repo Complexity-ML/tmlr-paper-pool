@@ -69,6 +69,10 @@ class TransformerBlock(nn.Module):
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
             num_experts=config.num_experts,
+            expert_initialization=getattr(
+                config, "expert_initialization", "gpt_normal"
+            ),
+            initializer_range=getattr(config, "initializer_range", 0.02),
             vocab_size=config.vocab_size,
             routing_strategy=getattr(config, 'routing_strategy', 'modulo_cyclic'),
             token_frequencies=config.token_frequencies,

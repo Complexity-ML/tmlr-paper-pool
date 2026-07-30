@@ -200,6 +200,7 @@ def main():
         else:
             logger.info(
                 f"Config: mlp={config.mlp_type}, router_balance={config.router_balance_mode}, "
+                f"expert_init={config.expert_initialization}, "
                 f"hidden={args.hidden_size}, layers={args.num_hidden_layers}, "
                 f"GQA={args.num_attention_heads}/{args.num_key_value_heads}, "
                 f"inter={args.intermediate_size}, shared_inter={args.shared_intermediate_size}, "

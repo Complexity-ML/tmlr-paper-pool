@@ -15,6 +15,7 @@ run:
   save_steps: 954
   save_total_limit: 2
   loss_chunk_tokens: 1024
+  expert_initialization: legacy_kaiming
   top_k: 2
   top_k_primary_weight: 0.5
   top_k_primary_weight_final: 0.5

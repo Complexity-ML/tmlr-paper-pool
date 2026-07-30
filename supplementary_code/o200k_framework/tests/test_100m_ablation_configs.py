@@ -19,6 +19,57 @@ ABLATION_NAMES = [
 ]
 
 
+def test_routed_expert_initialization_is_explicit_and_auditable():
+    from complexity.config.model_config import ModelConfig
+    from complexity.models.builder import ComplexityModel
+
+    torch.manual_seed(11)
+    corrected = ComplexityModel(
+        ModelConfig(
+            vocab_size=128,
+            hidden_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            intermediate_size=32,
+            num_experts=4,
+            mlp_type="token_routed",
+            shared_expert=True,
+            shared_intermediate_size=96,
+            expert_initialization="gpt_normal",
+            initializer_range=0.02,
+        )
+    )
+    torch.manual_seed(11)
+    historical = ComplexityModel(
+        ModelConfig(
+            vocab_size=128,
+            hidden_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            intermediate_size=32,
+            num_experts=4,
+            mlp_type="token_routed",
+            shared_expert=True,
+            shared_intermediate_size=96,
+            expert_initialization="legacy_kaiming",
+            initializer_range=0.02,
+        )
+    )
+
+    corrected_mlp = corrected.layers[0].mlp
+    historical_mlp = historical.layers[0].mlp
+    corrected_std = corrected_mlp.gate_proj_w.detach().std().item()
+    shared_std = corrected_mlp.shared_gate.weight.detach().std().item()
+    historical_std = historical_mlp.gate_proj_w.detach().std().item()
+
+    assert corrected_std == pytest.approx(0.02, rel=0.03)
+    assert shared_std == pytest.approx(0.02, rel=0.03)
+    assert corrected_std == pytest.approx(shared_std, rel=0.04)
+    assert historical_std > corrected_std * 3.0
+
+
 def test_token_shard_frequency_counts_are_integer_exact(tmp_path):
     from complexity.data.token_shards import token_shard_frequencies, write_token_shard
 
@@ -256,6 +307,8 @@ def test_seven_100m_ablation_yaml_configs_match_reported_two_gpu_runs():
         assert data["batch_size"] == 256
         assert data["seq_len"] == 2048
         assert data["run_name"] == f"b200-1b-{name}"
+        assert data["expert_initialization"] == "legacy_kaiming"
+        assert args.expert_initialization == "legacy_kaiming"
         assert args.routing_strategy == expected_strategy[name]
         assert args.steps == 954
         assert args.batch_size == 256

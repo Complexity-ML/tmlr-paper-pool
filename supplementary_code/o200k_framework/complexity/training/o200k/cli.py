@@ -55,6 +55,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--intermediate-size", type=int, default=None)
     parser.add_argument("--shared-intermediate-size", type=int, default=None)
     parser.add_argument(
+        "--expert-initialization",
+        choices=["gpt_normal", "legacy_kaiming"],
+        default="gpt_normal",
+        help=(
+            "Initialization for raw routed-expert tensors. gpt_normal matches "
+            "dense/shared projections; legacy_kaiming reproduces historical runs."
+        ),
+    )
+    parser.add_argument(
         "--shared-expert-chunk-tokens",
         type=int,
         default=32768,

@@ -20,6 +20,25 @@ The sole reported 300M Token-Routed entrypoint is `scripts/train_300m_tr_local.p
 
 For the full reported command rather than smoke-test defaults, run `scripts/run_verified_300m_8xb300.sh tr` and `scripts/run_verified_300m_8xb300.sh dense` on an 8-GPU node. The launcher records the 7,620-step, batch-64/GPU, sequence-2,048, BF16, seed-42 configuration. The evaluation loader uses a fixed stream from the FineWeb-Edu `train` split and is not an independent held-out validation set.
 
+## Routed-expert initialization provenance
+
+The reported 300M checkpoints and historical 100M ablations used
+`expert_initialization=legacy_kaiming`. An audit found that the routed expert
+gate/up tensors are raw `nn.Parameter` objects rather than `nn.Linear`
+modules. They therefore retained their constructor Kaiming initialization
+while the dense and shared gate/up projections were reinitialized with the
+model-wide GPT-style normal distribution (`std=0.02`). With the historical
+`[hidden_size, expert_width]` tensor layout, this produces a substantially
+larger routed gate/up scale.
+
+The snapshot retains `legacy_kaiming` explicitly in every historical
+reproduction command and configuration so the included metrics remain
+reproducible. New experiments default to `gpt_normal`, which explicitly
+initializes the routed gate/up tensors with `std=initializer_range`; the
+residual down projections continue to receive the same layer-scaled
+initialization as before. No corrected-initialization result is attributed to
+the historical checkpoints.
+
 ## Verified routing behavior
 
 `complexity/core/mlp/token_routed.py` uses fixed token-ID lookup tables; there is no learned expert-selection router. The routing controls are:
@@ -79,5 +98,5 @@ PYTHONPATH=. pytest tests/test_100m_ablation_configs.py -q
 Expected result:
 
 ```text
-8 passed
+11 passed
 ```

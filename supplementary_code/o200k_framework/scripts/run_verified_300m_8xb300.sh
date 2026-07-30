@@ -28,6 +28,7 @@ case "$MODEL" in
       "${COMMON[@]}" \
       --intermediate-size 256 \
       --shared-intermediate-size 3840 \
+      --expert-initialization legacy_kaiming \
       --shared-gate-init 0.5 \
       --routed-gate-init 0.5 \
       --top-k 2 \

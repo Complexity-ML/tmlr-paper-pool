@@ -71,6 +71,7 @@ class ModelConfig:
 
     # === MoE (Token-Routed) ===
     num_experts: int = 1  # 1 = standard MLP, >1 = MoE
+    expert_initialization: str = "gpt_normal"  # gpt_normal or legacy_kaiming
     token_frequencies: Optional[torch.Tensor] = None  # Ablation-only frequency table
     routing_strategy: str = "modulo_cyclic"
     lsh_routing: bool = False  # Route on a fixed random-hyperplane hash of h (semantic), not the token id
@@ -180,6 +181,10 @@ class ModelConfig:
             raise ValueError("sliding_window must be positive when set")
         if self.num_experts <= 0:
             raise ValueError("num_experts must be positive")
+        if self.expert_initialization not in {"gpt_normal", "legacy_kaiming"}:
+            raise ValueError(
+                "expert_initialization must be 'gpt_normal' or 'legacy_kaiming'"
+            )
         if self.top_k <= 0:
             raise ValueError("top_k must be positive")
         if self.top_k > self.num_experts:
